@@ -1,0 +1,25 @@
+export const Strings = {
+  appName: 'Keipr',
+  tagline: 'Smart receipts, sharper books.',
+  version: 'v1.0.0',
+  errors: {
+    generic: 'Something went wrong. Please try again.',
+    network: 'No connection — showing cached data.',
+    signIn: 'Invalid email or password.',
+    signUp: 'Could not create account. Please try again.',
+    saveExpense: 'Could not save expense. Please try again.',
+    deleteExpense: 'Could not delete expense.',
+    loadExpenses: 'Could not load expenses.',
+    export: 'Export failed. Please try again.',
+    ocr: 'Could not read receipt automatically.',
+    deleteAll: 'Could not delete expenses.',
+    updateProfile: 'Could not update profile.',
+    changePassword: 'Could not send reset email.',
+  },
+  empty: {
+    expenses: 'No expenses this month',
+    expensesFiltered: 'No matching expenses',
+    expensesHint: 'Scan a receipt or add one manually',
+    reports: 'No data for this period',
+  },
+} as const

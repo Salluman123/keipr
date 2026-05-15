@@ -1,0 +1,16 @@
+export const Colors = {
+  purpleLight: '#9F67F7',
+  purpleDark: '#5418C8',
+  amber: '#F59E0B',
+  navy: '#1A1A2E',
+  offWhite: '#F0EEFF',
+  background: '#0D0D14',
+  card: '#1A1A2E',
+  white: '#FFFFFF',
+  gray: '#6B7280',
+  grayLight: '#9CA3AF',
+  error: '#EF4444',
+  success: '#10B981',
+  border: '#252540',
+  inputBg: '#13131F',
+} as const

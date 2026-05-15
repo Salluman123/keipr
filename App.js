@@ -1,20 +1,20 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
+import { StatusBar } from 'expo-status-bar'
+import AppNavigator from './src/navigation/AppNavigator'
+import { useAuthStore } from './src/store/authStore'
 
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
-}
+  const initialize = useAuthStore((state) => state.initialize)
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+  useEffect(() => {
+    initialize()
+  }, [])
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" backgroundColor="#0D0D14" />
+      <AppNavigator />
+    </SafeAreaProvider>
+  )
+}

@@ -30,6 +30,7 @@ import { Colors } from '../../constants/colors'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
+import { usePurchaseStore } from '../../store/purchaseStore'
 import type { Expense } from '../../types'
 import type { MainTabParamList } from '../../navigation/MainTabs'
 import type { MainStackParamList } from '../../navigation/MainStack'
@@ -77,7 +78,7 @@ function SpendingChart({ expenses, month, year }: { expenses: Expense[]; month: 
   const fillPath = `${linePath} L ${pts[pts.length - 1].x} ${CHART_H} L 0 ${CHART_H} Z`
 
   return (
-    <Svg width={CHART_W} height={CHART_H} overflow="hidden" style={{ overflow: 'hidden' }}>
+    <Svg width={CHART_W} height={CHART_H} style={{ overflow: 'hidden' }}>
       <Defs>
         <SvgGradient id="cg" x1="0" y1="0" x2="0" y2="1">
           <Stop offset="0" stopColor="#9F67F7" stopOpacity="0.35" />
@@ -175,6 +176,7 @@ export default function HomeScreen() {
     fetchExpenses,
     setSelectedPeriod,
   } = useExpenseStore()
+  const { isPro } = usePurchaseStore()
 
   const [refreshing, setRefreshing] = useState(false)
   const monthScrollRef = useRef<ScrollView>(null)
@@ -236,14 +238,16 @@ export default function HomeScreen() {
             <Text style={styles.welcomeLabel}>WELCOME BACK</Text>
             <Text style={styles.appName}>keipr</Text>
           </View>
-          <LinearGradient
-            colors={[Colors.purpleLight, '#E879A0']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.avatar}
-          >
-            <Text style={styles.avatarInitial}>{userInitial}</Text>
-          </LinearGradient>
+          <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.8}>
+            <LinearGradient
+              colors={[Colors.purpleLight, '#E879A0']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarInitial}>{userInitial}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
         {/* ── Balance card ── */}
@@ -326,7 +330,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.quickPrimaryWrapper}
             activeOpacity={0.85}
-            onPress={() => navigation.navigate('ScanReceipt')}
+            onPress={() => isPro ? navigation.navigate('ScanReceipt') : navigation.navigate('Paywall')}
           >
             <LinearGradient
               colors={[Colors.purpleLight, Colors.purpleDark]}

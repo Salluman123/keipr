@@ -3,18 +3,22 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, Alert,
 } from 'react-native'
+import { useNavigation } from '@react-navigation/native'
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
+import type { MainStackParamList } from '../../navigation/MainStack'
 import Svg, {
   Rect, Circle, G, Defs, ClipPath,
   LinearGradient as SvgGradient, Stop,
   Text as SvgText,
 } from 'react-native-svg'
-import { Ionicons } from '@expo/vector-icons'
+
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Colors } from '../../constants/colors'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useExpenseStore } from '../../store/expenseStore'
 import { useAuthStore } from '../../store/authStore'
+import { usePurchaseStore } from '../../store/purchaseStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
 import { getCurrencySymbol } from '../../lib/currency'
@@ -51,7 +55,7 @@ function BarChart({
   const BAR_AREA_H = BAR_H - LABEL_H
 
   return (
-    <Svg width={CHART_W} height={BAR_H} overflow="hidden" style={{ overflow: 'hidden' }}>
+    <Svg width={CHART_W} height={BAR_H} style={{ overflow: 'hidden' }}>
       <Defs>
         <ClipPath id="barClip">
           <Rect x="0" y="0" width={CHART_W} height={BAR_H} />
@@ -112,7 +116,7 @@ function DonutChart({ segments, sym, currencyRate }: {
           fill="none" stroke={Colors.border} strokeWidth={22}
         />
       ) : (
-        segments.map((seg, i) => {
+        segments.map((seg, _i) => {
           const dash = seg.pct * circumference
           const offset = circumference * 0.25 - cumulative
           cumulative += dash
@@ -135,7 +139,7 @@ function DonutChart({ segments, sym, currencyRate }: {
         Total
       </SvgText>
       <SvgText x={DONUT_CX} y={DONUT_CY + 10} textAnchor="middle" fontSize={13} fontWeight="700" fill={Colors.offWhite}>
-        {sym}{(segments.reduce((s, c) => s + c.amount, 0) * currencyRate).toFixed(0)}
+        {`${sym} ${(segments.reduce((s, c) => s + c.amount, 0) * currencyRate).toFixed(0)}`}
       </SvgText>
     </Svg>
   )
@@ -145,8 +149,10 @@ function DonutChart({ segments, sym, currencyRate }: {
 
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets()
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>()
   const { user } = useAuthStore()
   const { expenses, selectedMonth, selectedYear, currency, currencyRate } = useExpenseStore()
+  const { isPro } = usePurchaseStore()
   const sym = getCurrencySymbol(currency)
   const userId = user?.id ?? ''
 
@@ -159,28 +165,33 @@ export default function ReportsScreen() {
   useEffect(() => {
     if (!userId) return
     const fetchBarData = async () => {
-      const now = new Date()
-      const months = Array.from({ length: 6 }, (_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-        return { month: d.getMonth(), year: d.getFullYear() }
-      })
-      const results = await Promise.all(
-        months.map(async ({ month, year }) => {
-          const mm = String(month + 1).padStart(2, '0')
-          const lastDay = new Date(year, month + 1, 0).getDate()
-          const { data } = await supabase
-            .from('expenses')
-            .select('amount')
-            .eq('user_id', userId)
-            .gte('date', `${year}-${mm}-01`)
-            .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
-          return {
-            month, year,
-            total: (data ?? []).reduce((sum: number, e: any) => sum + (e.amount ?? 0), 0),
-          }
+      try {
+        const now = new Date()
+        const months = Array.from({ length: 6 }, (_, i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+          return { month: d.getMonth(), year: d.getFullYear() }
         })
-      )
-      setBarData(results)
+        const results = await Promise.all(
+          months.map(async ({ month, year }) => {
+            const mm = String(month + 1).padStart(2, '0')
+            const lastDay = new Date(year, month + 1, 0).getDate()
+            const { data, error } = await supabase
+              .from('expenses')
+              .select('amount')
+              .eq('user_id', userId)
+              .gte('date', `${year}-${mm}-01`)
+              .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
+            if (error) throw error
+            return {
+              month, year,
+              total: (data ?? []).reduce((sum: number, e: any) => sum + (e.amount ?? 0), 0),
+            }
+          })
+        )
+        setBarData(results)
+      } catch {
+        Alert.alert('Error', 'Could not load spending history.')
+      }
     }
     fetchBarData()
   }, [userId])
@@ -189,14 +200,19 @@ export default function ReportsScreen() {
   useEffect(() => {
     if (period !== 'yearly' || !userId) return
     const fetchYearly = async () => {
-      const { data } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', userId)
-        .gte('date', `${selectedYear}-01-01`)
-        .lte('date', `${selectedYear}-12-31`)
-        .order('date', { ascending: false })
-      setYearlyExpenses((data ?? []) as Expense[])
+      try {
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('user_id', userId)
+          .gte('date', `${selectedYear}-01-01`)
+          .lte('date', `${selectedYear}-12-31`)
+          .order('date', { ascending: false })
+        if (error) throw error
+        setYearlyExpenses((data ?? []) as Expense[])
+      } catch {
+        Alert.alert('Error', 'Could not load yearly expenses.')
+      }
     }
     fetchYearly()
   }, [period, userId, selectedYear])
@@ -241,6 +257,10 @@ export default function ReportsScreen() {
   const maxCatTotal = Math.max(...categoryData.totals.map(c => c.total), 1)
 
   const handleExport = async () => {
+    if (!isPro) {
+      navigation.navigate('Paywall')
+      return
+    }
     if (periodExpenses.length === 0) {
       Alert.alert('No Data', 'There are no expenses to export for this period.')
       return
@@ -344,7 +364,7 @@ export default function ReportsScreen() {
                         <Text style={r.legendName} numberOfLines={1}>
                           {cat.label.split('&')[0].trim()}
                         </Text>
-                        <Text style={r.legendAmt}>{sym}{(cat.total * currencyRate).toFixed(0)}</Text>
+                        <Text style={r.legendAmt}>{`${sym} ${(cat.total * currencyRate).toFixed(0)}`}</Text>
                       </View>
                       <View style={r.legendBarBg}>
                         <View

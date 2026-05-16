@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, Switch,
   StyleSheet, Alert, Modal, TextInput, KeyboardAvoidingView, Platform,
@@ -6,13 +6,17 @@ import {
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useNavigation } from '@react-navigation/native'
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { CURRENCIES } from '../../lib/currency'
 import { Colors } from '../../constants/colors'
 import { Strings } from '../../constants/strings'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
+import { usePurchaseStore } from '../../store/purchaseStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
+import type { MainStackParamList } from '../../navigation/MainStack'
 import type { Expense } from '../../types'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -57,8 +61,10 @@ function Row({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
+  const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>()
   const { user, signOut } = useAuthStore()
   const { fetchExpenses, selectedMonth, selectedYear, currency, setCurrency } = useExpenseStore()
+  const { isPro } = usePurchaseStore()
   const userId = user?.id ?? ''
 
   const name: string = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'User'
@@ -282,11 +288,30 @@ export default function SettingsScreen() {
               <Text style={s.profileEmail} numberOfLines={1}>{user?.email ?? ''}</Text>
             </View>
 
-            <View style={s.proBadge}>
-              <Text style={s.proBadgeText}>PRO ✦</Text>
-            </View>
+            {isPro && (
+              <View style={s.proBadge}>
+                <Text style={s.proBadgeText}>PRO ✦</Text>
+              </View>
+            )}
           </View>
         </LinearGradient>
+
+        {/* Upgrade to Pro */}
+        {!isPro && (
+          <TouchableOpacity onPress={() => navigation.navigate('Paywall')} activeOpacity={0.85}>
+            <LinearGradient
+              colors={[Colors.purpleDark, Colors.purpleLight]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={s.upgradeBanner}
+            >
+              <View style={s.upgradeTextCol}>
+                <Text style={s.upgradeTitle}>Upgrade to Pro ✦</Text>
+                <Text style={s.upgradeSubtitle}>Unlock scanning, CSV export & unlimited expenses</Text>
+              </View>
+              <Text style={s.upgradePrice}>$4.99/mo</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         {/* Preferences */}
         <SectionHeader title="PREFERENCES" />
@@ -425,6 +450,15 @@ const s = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 15, color: Colors.offWhite },
   rowRight: { alignItems: 'center', justifyContent: 'center' },
   sep: { height: 1, backgroundColor: Colors.border, marginLeft: 54 },
+
+  upgradeBanner: {
+    borderRadius: 18, padding: 18, marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  upgradeTextCol: { flex: 1, gap: 3 },
+  upgradeTitle: { fontSize: 15, fontWeight: '700', color: '#fff', fontFamily: 'Georgia' },
+  upgradeSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 16 },
+  upgradePrice: { fontSize: 14, fontWeight: '700', color: Colors.amber },
 
   currencyPill: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   currencyText: { fontSize: 14, fontWeight: '600', color: Colors.purpleLight },

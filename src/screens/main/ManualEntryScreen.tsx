@@ -23,6 +23,8 @@ import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import type { CategoryId } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
+import { usePurchaseStore } from '../../store/purchaseStore'
+import { getCurrencySymbol } from '../../lib/currency'
 import { supabase } from '../../lib/supabase'
 import type { MainStackParamList } from '../../navigation/MainStack'
 
@@ -123,7 +125,9 @@ async function uploadReceiptImage(uri: string, userId: string): Promise<string |
 export default function ManualEntryScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
-  const { addExpense } = useExpenseStore()
+  const { addExpense, expenses, currency } = useExpenseStore()
+  const { isPro } = usePurchaseStore()
+  const sym = getCurrencySymbol(currency)
 
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
@@ -164,6 +168,18 @@ export default function ManualEntryScreen({ navigation }: Props) {
     if (!vendor.trim()) { Alert.alert('Required', 'Please enter a vendor name.'); return }
     const parsed = parseFloat(amount)
     if (isNaN(parsed) || parsed <= 0) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return }
+
+    if (!isPro && expenses.length >= 10) {
+      Alert.alert(
+        'Free Limit Reached',
+        'You\'ve used all 10 free expenses this month. Upgrade to Pro for unlimited expenses.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Upgrade to Pro', onPress: () => navigation.navigate('Paywall') },
+        ],
+      )
+      return
+    }
 
     setSaving(true)
     try {
@@ -230,7 +246,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
           <View style={styles.field}>
             <Text style={styles.label}>AMOUNT</Text>
             <View style={[styles.inputRow, amountFocused && styles.inputRowFocused]}>
-              <Text style={[styles.currency, { color: amountFocused ? Colors.purpleLight : Colors.gray }]}>$</Text>
+              <Text style={[styles.currency, { color: amountFocused ? Colors.purpleLight : Colors.gray }]}>{sym}</Text>
               <TextInput
                 ref={amountRef}
                 style={[styles.input, { flex: 1 }]}

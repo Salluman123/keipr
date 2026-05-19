@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native'
 import Purchases, { PurchasesPackage } from 'react-native-purchases'
 import { Colors } from '../constants/colors'
 import { usePurchaseStore } from '../store/purchaseStore'
+import KeiprIcon from '../components/KeiprIcon'
 
 const FEATURES = [
   { icon: '♾️', text: 'Unlimited expenses per month' },
@@ -78,13 +79,7 @@ export default function PaywallScreen() {
       >
         {/* Hero */}
         <View style={s.hero}>
-          <LinearGradient
-            colors={[Colors.purpleLight, Colors.purpleDark]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={s.iconBadge}
-          >
-            <Text style={s.iconGlyph}>✦</Text>
-          </LinearGradient>
+          <KeiprIcon size={68} />
           <Text style={s.title}>keipr Pro</Text>
           <Text style={s.subtitle}>Everything you need to run your business</Text>
         </View>
@@ -178,11 +173,6 @@ const s = StyleSheet.create({
   scroll: { paddingHorizontal: 20, paddingTop: 20 },
 
   hero: { alignItems: 'center', paddingVertical: 32, gap: 10 },
-  iconBadge: {
-    width: 72, height: 72, borderRadius: 22,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
-  },
-  iconGlyph: { fontSize: 34, color: '#fff' },
   title: { fontSize: 32, fontFamily: 'Georgia', color: Colors.offWhite, letterSpacing: -0.5 },
   subtitle: { fontSize: 15, color: Colors.gray, textAlign: 'center', lineHeight: 22 },
 

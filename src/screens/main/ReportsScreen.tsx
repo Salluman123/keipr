@@ -21,7 +21,7 @@ import { useAuthStore } from '../../store/authStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
-import { getCurrencySymbol } from '../../lib/currency'
+import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
 import type { Expense } from '../../types'
 
 const { width: SW } = Dimensions.get('window')
@@ -230,7 +230,9 @@ export default function ReportsScreen() {
     return expenses // monthly
   }, [period, expenses, yearlyExpenses])
 
-  const totalExpenses = periodExpenses.reduce((sum, e) => sum + e.amount, 0)
+  const totalExpenses = periodExpenses.reduce(
+    (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+  )
 
   // Category breakdown for donut
   const categoryData = useMemo(() => {
@@ -239,7 +241,9 @@ export default function ReportsScreen() {
       label: cat.label,
       icon: cat.icon,
       color: cat.color,
-      total: periodExpenses.filter(e => e.category === cat.id).reduce((sum, e) => sum + e.amount, 0),
+      total: periodExpenses.filter(e => e.category === cat.id).reduce(
+        (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+      ),
     })).filter(c => c.total > 0).sort((a, b) => b.total - a.total)
 
     const grand = totals.reduce((s, c) => s + c.total, 0)

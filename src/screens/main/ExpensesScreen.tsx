@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Colors } from '../../constants/colors'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useExpenseStore } from '../../store/expenseStore'
-import { getCurrencySymbol } from '../../lib/currency'
+import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
 import { useAuthStore } from '../../store/authStore'
 import type { Expense } from '../../types'
 import type { CategoryId } from '../../constants/categories'
@@ -135,7 +135,10 @@ export default function ExpensesScreen() {
     return matchCat && matchSearch
   }), [expenses, filter, search])
 
-  const totalOut = useMemo(() => filtered.reduce((sum, e) => sum + e.amount, 0), [filtered])
+  const totalOut = useMemo(
+    () => filtered.reduce((sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0),
+    [filtered]
+  )
 
   const { groupOrder, groupMap } = useMemo(() => {
     const order: string[] = []
@@ -278,7 +281,7 @@ export default function ExpensesScreen() {
                         <Text style={s.vendor} numberOfLines={1}>{expense.vendor}</Text>
                         <Text style={s.rowMeta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
                       </View>
-                      <Text style={s.amount}>-{sym}{(expense.amount * currencyRate).toFixed(2)}</Text>
+                      <Text style={s.amount}>-{sym}{(expense.amount * currencyRate / getCurrencyRate(expense.currency || 'USD')).toFixed(2)}</Text>
                     </TouchableOpacity>
                   </SwipeableRow>
                 )

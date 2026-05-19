@@ -188,6 +188,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
         user_id: user!.id,
         vendor: vendor.trim(),
         amount: parsed,
+        currency,
         date: date.toISOString().split('T')[0],
         category,
         notes: notes.trim() || undefined,

@@ -218,6 +218,7 @@ export default function ScanScreen({ navigation }: Props) {
         user_id: user!.id,
         vendor: vendor.trim(),
         amount: parsedAmount,
+        currency: expenseCurrency,
         date,
         category,
         notes: notes.trim() || undefined,

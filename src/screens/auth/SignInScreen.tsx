@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { AuthStackParamList } from '../../navigation/AuthStack'
 import { Colors } from '../../constants/colors'
 import { useAuthStore } from '../../store/authStore'
+import KeiprIcon from '../../components/KeiprIcon'
 
 const Spinner = ({ size = 20, color = '#FFFFFF' }) => (
   <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 3, borderColor: 'transparent', borderTopColor: color }} />
@@ -71,15 +72,7 @@ export default function SignInScreen({ navigation }: Props) {
       >
         {/* Logo mark */}
         <View style={styles.logoRow}>
-          <LinearGradient
-            colors={[Colors.purpleLight, Colors.purpleDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoMark}
-          >
-            <Text style={styles.logoK}>K</Text>
-          </LinearGradient>
-          <View style={styles.amberDot} />
+          <KeiprIcon size={52} />
         </View>
 
         <Text style={styles.heading}>Welcome back</Text>
@@ -213,34 +206,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logoRow: {
-    position: 'relative',
-    width: 52,
-    height: 52,
     marginBottom: 32,
-  },
-  logoMark: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoK: {
-    fontSize: 26,
-    fontFamily: 'Georgia',
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  amberDot: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.amber,
-    borderWidth: 2,
-    borderColor: Colors.background,
   },
   heading: {
     fontSize: 30,

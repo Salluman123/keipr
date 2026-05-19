@@ -11,6 +11,7 @@ type NewExpense = {
   user_id: string
   vendor: string
   amount: number
+  currency: string
   date: string
   category: CategoryId
   notes?: string
@@ -39,7 +40,10 @@ interface ExpenseStore {
 
 const computeStats = (expenses: Expense[]) => ({
   totalIncome: 0,
-  totalExpenses: expenses.reduce((sum, e) => sum + e.amount, 0),
+  // Normalise to USD so display screens can multiply by any display-currency rate
+  totalExpenses: expenses.reduce(
+    (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+  ),
 })
 
 const dateRange = (month: number, year: number) => {

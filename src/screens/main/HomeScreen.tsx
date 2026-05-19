@@ -22,11 +22,12 @@ import Svg, {
 } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native'
-import { getCurrencySymbol } from '../../lib/currency'
+import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
 import type { CompositeNavigationProp } from '@react-navigation/native'
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { Colors } from '../../constants/colors'
+import KeiprIcon from '../../components/KeiprIcon'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
@@ -130,7 +131,7 @@ function ExpenseRow({ expense, sym, currencyRate }: { expense: Expense; sym: str
         <Text style={rowStyles.meta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
       </View>
       <Text style={rowStyles.amount}>
-        -{sym}{(expense.amount * currencyRate).toFixed(2)}
+        -{sym}{(expense.amount * currencyRate / getCurrencyRate(expense.currency || 'USD')).toFixed(2)}
       </Text>
     </View>
   )
@@ -236,7 +237,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.welcomeLabel}>WELCOME BACK</Text>
-            <Text style={styles.appName}>keipr</Text>
+            <KeiprIcon size={28} />
           </View>
           <TouchableOpacity onPress={() => navigation.navigate('Settings')} activeOpacity={0.8}>
             <LinearGradient

@@ -8,19 +8,19 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Alert,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
+import * as AppleAuthentication from 'expo-apple-authentication'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { AuthStackParamList } from '../../navigation/AuthStack'
 import { Colors } from '../../constants/colors'
 import { useAuthStore } from '../../store/authStore'
+import KeiprIcon from '../../components/KeiprIcon'
+import Spinner from '../../components/Spinner'
 import type { AccountType } from '../../types'
-
-const Spinner = ({ size = 20, color = '#FFFFFF' }) => (
-  <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 3, borderColor: 'transparent', borderTopColor: color }} />
-)
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'SignUp'>
@@ -35,6 +35,7 @@ const ACCOUNT_TYPES: { id: AccountType; label: string }[] = [
 export default function SignUpScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets()
   const signUp = useAuthStore((s) => s.signUp)
+  const signInWithApple = useAuthStore((s) => s.signInWithApple)
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -43,6 +44,7 @@ export default function SignUpScreen({ navigation }: Props) {
   const [accountType, setAccountType] = useState<AccountType>('freelancer')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [confirmationSent, setConfirmationSent] = useState(false)
 
   const [nameFocused, setNameFocused] = useState(false)
   const [emailFocused, setEmailFocused] = useState(false)
@@ -67,11 +69,35 @@ export default function SignUpScreen({ navigation }: Props) {
     setError('')
     setLoading(true)
     try {
-      await signUp(email.trim().toLowerCase(), password, fullName.trim(), accountType)
+      const needsConfirmation = await signUp(email.trim().toLowerCase(), password, fullName.trim(), accountType)
+      if (needsConfirmation) {
+        // No session yet — the account exists but the user must confirm their
+        // email first. Without this state the screen would just sit there.
+        setConfirmationSent(true)
+      }
+      // Otherwise onAuthStateChange fires SIGNED_IN and the app navigates itself.
     } catch (e: any) {
       setError(e?.message ?? 'Sign up failed. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAppleSignIn = async () => {
+    const startedAt = Date.now()
+    try {
+      await signInWithApple()
+    } catch (e: any) {
+      // Instant ERR_REQUEST_CANCELED = the sheet failed to present (iPad bug) →
+      // surface it. A late one = genuine user cancel → stay silent.
+      const isCancelled = e?.code === 'ERR_REQUEST_CANCELED'
+      if (isCancelled && Date.now() - startedAt > 1000) return
+      Alert.alert(
+        'Sign In Failed',
+        isCancelled
+          ? 'Sign in with Apple could not be completed. Please try again or use email and password.'
+          : (e?.message ?? 'Apple sign in failed. Please try again.'),
+      )
     }
   }
 
@@ -90,17 +116,33 @@ export default function SignUpScreen({ navigation }: Props) {
       >
         {/* Logo mark */}
         <View style={styles.logoRow}>
-          <LinearGradient
-            colors={[Colors.purpleLight, Colors.purpleDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.logoMark}
-          >
-            <Text style={styles.logoK}>K</Text>
-          </LinearGradient>
-          <View style={styles.amberDot} />
+          <KeiprIcon size={52} />
         </View>
 
+        {confirmationSent ? (
+          <View style={styles.confirmBox}>
+            <Text style={styles.heading}>Check your email</Text>
+            <Text style={styles.confirmBody}>
+              We sent a confirmation link to{' '}
+              <Text style={styles.confirmEmail}>{email.trim().toLowerCase()}</Text>
+              {'. Open it to activate your account, then sign in.'}
+            </Text>
+            <Text style={styles.confirmNote}>
+              Didn't receive it? Check your spam folder or wait a minute before trying again.
+            </Text>
+            <TouchableOpacity onPress={() => navigation.push('SignIn')} activeOpacity={0.85}>
+              <LinearGradient
+                colors={[Colors.purpleLight, Colors.purpleDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.ctaButton}
+              >
+                <Text style={styles.ctaText}>Go to Sign In</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        ) : (
+        <>
         <Text style={styles.heading}>Create Account</Text>
         <Text style={styles.subheading}>Join thousands of freelancers & small businesses</Text>
 
@@ -251,6 +293,23 @@ export default function SignUpScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {Platform.OS === 'ios' && (
+          <>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={16}
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+            />
+          </>
+        )}
+
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>Already have an account? </Text>
@@ -258,6 +317,8 @@ export default function SignUpScreen({ navigation }: Props) {
             <Text style={styles.footerLink}>Sign In</Text>
           </TouchableOpacity>
         </View>
+        </>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   )
@@ -273,34 +334,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logoRow: {
-    position: 'relative',
-    width: 52,
-    height: 52,
     marginBottom: 32,
-  },
-  logoMark: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoK: {
-    fontSize: 26,
-    fontFamily: 'Georgia',
-    color: Colors.white,
-    fontWeight: '700',
-  },
-  amberDot: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.amber,
-    borderWidth: 2,
-    borderColor: Colors.background,
   },
   heading: {
     fontSize: 30,
@@ -420,5 +454,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.purpleLight,
     fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: Colors.gray,
+    letterSpacing: 0.5,
+  },
+  appleButton: {
+    height: 52,
+    marginTop: 20,
+  },
+  confirmBox: {
+    gap: 16,
+    paddingTop: 8,
+  },
+  confirmBody: {
+    fontSize: 15,
+    color: Colors.grayLight,
+    lineHeight: 23,
+  },
+  confirmEmail: {
+    color: Colors.purpleLight,
+    fontWeight: '600',
+  },
+  confirmNote: {
+    fontSize: 13,
+    color: Colors.gray,
+    lineHeight: 19,
+    marginBottom: 8,
   },
 })

@@ -1,0 +1,74 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// Queries the RevenueCat REST API for the user's current entitlement and, if
+// active, upserts public.user_entitlements directly. This is the self-healing
+// fallback for when the RevenueCat webhook hasn't landed yet (purchase→webhook
+// latency) or was dropped (e.g. purchase attributed to an anonymous ID that was
+// later aliased). It only ever UNLOCKS — an inactive/missing entitlement is
+// reported as false without writing anything, so a misconfigured REST key can
+// never downgrade a user the webhook has already marked Pro.
+export async function syncEntitlementFromRevenueCat(userId: string): Promise<boolean> {
+  const rcKey = Deno.env.get('REVENUECAT_SECRET_API_KEY')
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const entitlementId = Deno.env.get('REVENUECAT_ENTITLEMENT_ID') ?? 'get.keipr Pro'
+  if (!rcKey || !supabaseUrl || !serviceRoleKey) {
+    console.error('Entitlement sync skipped — missing REVENUECAT_SECRET_API_KEY or Supabase env')
+    return false
+  }
+
+  let res: Response
+  try {
+    res = await fetch(
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
+      {
+        signal: AbortSignal.timeout(10_000),
+        headers: { Authorization: `Bearer ${rcKey}` },
+      },
+    )
+  } catch (error) {
+    console.error('RevenueCat REST request failed', error instanceof Error ? error.message : String(error))
+    return false
+  }
+  if (!res.ok) {
+    console.error('RevenueCat REST returned status', res.status)
+    return false
+  }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = await res.json()
+  } catch {
+    return false
+  }
+
+  const subscriber = payload?.subscriber as Record<string, unknown> | undefined
+  const entitlements = subscriber?.entitlements as Record<string, unknown> | undefined
+  const entitlement = entitlements?.[entitlementId] as Record<string, unknown> | undefined
+  if (!entitlement) return false
+
+  const expiresIso = typeof entitlement.expires_date === 'string' ? entitlement.expires_date : null
+  const active = expiresIso === null || Date.parse(expiresIso) > Date.now()
+  if (!active) return false
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+
+  const nowMs = Date.now()
+  const { error } = await admin.from('user_entitlements').upsert({
+    user_id: userId,
+    is_pro: true,
+    product_id:
+      typeof entitlement.product_identifier === 'string' ? entitlement.product_identifier : null,
+    expires_at: expiresIso,
+    source_event_id: `rest-sync:${nowMs}`,
+    source_event_timestamp_ms: nowMs,
+    updated_at: new Date(nowMs).toISOString(),
+  })
+  if (error) {
+    console.error('Entitlement sync upsert failed', error.message)
+    return false
+  }
+  return true
+}

@@ -12,16 +12,14 @@ import {
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
+import * as AppleAuthentication from 'expo-apple-authentication'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { AuthStackParamList } from '../../navigation/AuthStack'
 import { Colors } from '../../constants/colors'
 import { useAuthStore } from '../../store/authStore'
 import KeiprIcon from '../../components/KeiprIcon'
-
-const Spinner = ({ size = 20, color = '#FFFFFF' }) => (
-  <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 3, borderColor: 'transparent', borderTopColor: color }} />
-)
+import Spinner from '../../components/Spinner'
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'SignIn'>
@@ -30,6 +28,7 @@ type Props = {
 export default function SignInScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets()
   const signIn = useAuthStore((s) => s.signIn)
+  const signInWithApple = useAuthStore((s) => s.signInWithApple)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -54,6 +53,28 @@ export default function SignInScreen({ navigation }: Props) {
       setError(e?.message ?? 'Sign in failed. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAppleSignIn = async () => {
+    const startedAt = Date.now()
+    try {
+      await signInWithApple()
+    } catch (e: any) {
+      // ERR_REQUEST_CANCELED covers two very different cases:
+      //  - the Apple sheet failed to present at all (iPad compatibility-mode bug)
+      //    → the error arrives near-instantly → must be surfaced;
+      //  - the user deliberately dismissed the sheet → arrives after they
+      //    interacted with it → showing "Sign In Failed" would be wrong.
+      // Distinguish them by how quickly the error came back.
+      const isCancelled = e?.code === 'ERR_REQUEST_CANCELED'
+      if (isCancelled && Date.now() - startedAt > 1000) return
+      Alert.alert(
+        'Sign In Failed',
+        isCancelled
+          ? 'Sign in with Apple could not be completed. Please try again or use email and password.'
+          : (e?.message ?? 'Apple sign in failed. Please try again.'),
+      )
     }
   }
 
@@ -184,6 +205,23 @@ export default function SignInScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
+        {Platform.OS === 'ios' && (
+          <>
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.dividerLine} />
+            </View>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={16}
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+            />
+          </>
+        )}
+
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>Don't have an account? </Text>
@@ -300,5 +338,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.purpleLight,
     fontWeight: '600',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+    gap: 10,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: Colors.gray,
+    letterSpacing: 0.5,
+  },
+  appleButton: {
+    height: 52,
+    marginTop: 20,
   },
 })

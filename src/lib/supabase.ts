@@ -15,9 +15,20 @@ const ExpoSecureStoreAdapter = {
     SecureStore.deleteItemAsync(key).catch(() => {}),
 }
 
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+
+// createClient() throws synchronously on a falsy url/key — at import time, before
+// any try/catch in App.js can run — which would crash the entire app on launch.
+// Fall back to placeholders so the app boots; calls will fail gracefully instead
+// (already handled by try/catch in every store that talks to Supabase).
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY — check eas.json env vars for this build/update.')
+}
+
 export const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key',
   {
     auth: {
       storage: ExpoSecureStoreAdapter,

@@ -34,8 +34,10 @@ export interface AuthStore {
   session: Session | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, fullName: string, accountType: AccountType) => Promise<void>
+  /** Resolves true when email confirmation is required before the user can sign in. */
+  signUp: (email: string, password: string, fullName: string, accountType: AccountType) => Promise<boolean>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
   initialize: () => Promise<void>
+  signInWithApple: () => Promise<void>
 }

@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Dimensions, Alert,
 } from 'react-native'
-import { useNavigation } from '@react-navigation/native'
+import { useNavigation, useFocusEffect } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { MainStackParamList } from '../../navigation/MainStack'
 import Svg, {
@@ -21,7 +21,9 @@ import { useAuthStore } from '../../store/authStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
-import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
+import { getCurrencySymbol, toDisplayAmount } from '../../lib/currency'
+import { getTodayMidnight, parseLocalDate } from '../../lib/date'
+import Spinner from '../../components/Spinner'
 import type { Expense } from '../../types'
 
 const { width: SW } = Dimensions.get('window')
@@ -95,10 +97,9 @@ function BarChart({
 
 // ─── Donut chart ──────────────────────────────────────────────────────────────
 
-function DonutChart({ segments, sym, currencyRate }: {
+function DonutChart({ segments, sym }: {
   segments: Array<{ id: string; color: string; pct: number; label: string; amount: number }>
   sym: string
-  currencyRate: number
 }) {
   const circumference = 2 * Math.PI * DONUT_R
   let cumulative = 0
@@ -139,7 +140,7 @@ function DonutChart({ segments, sym, currencyRate }: {
         Total
       </SvgText>
       <SvgText x={DONUT_CX} y={DONUT_CY + 10} textAnchor="middle" fontSize={13} fontWeight="700" fill={Colors.offWhite}>
-        {`${sym} ${(segments.reduce((s, c) => s + c.amount, 0) * currencyRate).toFixed(0)}`}
+        {`${sym} ${segments.reduce((s, c) => s + c.amount, 0).toFixed(0)}`}
       </SvgText>
     </Svg>
   )
@@ -161,40 +162,43 @@ export default function ReportsScreen() {
   const [barData, setBarData] = useState<Array<{ month: number; year: number; total: number }>>([])
   const [exporting, setExporting] = useState(false)
 
-  // Fetch bar chart data (last 6 months) on mount
-  useEffect(() => {
+  // Fetch bar chart data (last 6 months) every time this screen is focused
+  const fetchBarData = useCallback(async () => {
     if (!userId) return
-    const fetchBarData = async () => {
-      try {
-        const now = new Date()
-        const months = Array.from({ length: 6 }, (_, i) => {
-          const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-          return { month: d.getMonth(), year: d.getFullYear() }
+    try {
+      const now = new Date()
+      const months = Array.from({ length: 6 }, (_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+        return { month: d.getMonth(), year: d.getFullYear() }
+      })
+      const results = await Promise.all(
+        months.map(async ({ month, year }) => {
+          const mm = String(month + 1).padStart(2, '0')
+          const lastDay = new Date(year, month + 1, 0).getDate()
+          const { data, error } = await supabase
+            .from('expenses')
+            .select('amount,currency')
+            .eq('user_id', userId)
+            .gte('date', `${year}-${mm}-01`)
+            .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
+          if (error) throw error
+          return {
+            month, year,
+            total: (data ?? []).reduce(
+              (sum: number, e: { amount: number | null; currency: string | null }) =>
+                sum + toDisplayAmount(e.amount ?? 0, e.currency || 'USD', currencyRate),
+              0,
+            ),
+          }
         })
-        const results = await Promise.all(
-          months.map(async ({ month, year }) => {
-            const mm = String(month + 1).padStart(2, '0')
-            const lastDay = new Date(year, month + 1, 0).getDate()
-            const { data, error } = await supabase
-              .from('expenses')
-              .select('amount')
-              .eq('user_id', userId)
-              .gte('date', `${year}-${mm}-01`)
-              .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
-            if (error) throw error
-            return {
-              month, year,
-              total: (data ?? []).reduce((sum: number, e: any) => sum + (e.amount ?? 0), 0),
-            }
-          })
-        )
-        setBarData(results)
-      } catch {
-        Alert.alert('Error', 'Could not load spending history.')
-      }
+      )
+      setBarData(results)
+    } catch {
+      Alert.alert('Error', 'Could not load spending history.')
     }
-    fetchBarData()
-  }, [userId])
+  }, [userId, currencyRate])
+
+  useFocusEffect(useCallback(() => { fetchBarData() }, [fetchBarData]))
 
   // Fetch yearly data when period changes to yearly
   useEffect(() => {
@@ -221,17 +225,14 @@ export default function ReportsScreen() {
   const periodExpenses = useMemo((): Expense[] => {
     if (period === 'yearly') return yearlyExpenses
     if (period === 'weekly') {
-      const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7); cutoff.setHours(0, 0, 0, 0)
-      return expenses.filter(e => {
-        const [y, m, d] = e.date.split('-').map(Number)
-        return new Date(y, m - 1, d) >= cutoff
-      })
+      const cutoff = getTodayMidnight(); cutoff.setDate(cutoff.getDate() - 7)
+      return expenses.filter(e => parseLocalDate(e.date) >= cutoff)
     }
     return expenses // monthly
   }, [period, expenses, yearlyExpenses])
 
   const totalExpenses = periodExpenses.reduce(
-    (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+    (sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0
   )
 
   // Category breakdown for donut
@@ -242,13 +243,13 @@ export default function ReportsScreen() {
       icon: cat.icon,
       color: cat.color,
       total: periodExpenses.filter(e => e.category === cat.id).reduce(
-        (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+        (sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0
       ),
     })).filter(c => c.total > 0).sort((a, b) => b.total - a.total)
 
     const grand = totals.reduce((s, c) => s + c.total, 0)
     return { totals, grand }
-  }, [periodExpenses])
+  }, [periodExpenses, currencyRate])
 
   const donutSegments = categoryData.totals.map(c => ({
     id: c.id,
@@ -321,14 +322,14 @@ export default function ReportsScreen() {
             <View style={r.summaryCol}>
               <Text style={r.summaryColLabel}>Expenses</Text>
               <Text style={[r.summaryColValue, { color: Colors.error }]}>
-                {sym}{(totalExpenses * currencyRate).toFixed(2)}
+                {sym}{totalExpenses.toFixed(2)}
               </Text>
             </View>
             <View style={r.summaryDivider} />
             <View style={r.summaryCol}>
               <Text style={r.summaryColLabel}>Net</Text>
               <Text style={[r.summaryColValue, { color: Colors.purpleLight }]}>
-                -{sym}{(totalExpenses * currencyRate).toFixed(2)}
+                -{sym}{totalExpenses.toFixed(2)}
               </Text>
             </View>
           </View>
@@ -353,12 +354,12 @@ export default function ReportsScreen() {
           <Text style={r.cardTitle}>By Category</Text>
           {categoryData.totals.length === 0 ? (
             <View style={r.donutEmpty}>
-              <DonutChart segments={[]} sym={sym} currencyRate={currencyRate} />
+              <DonutChart segments={[]} sym={sym} />
               <Text style={r.donutEmptyText}>No data for this period</Text>
             </View>
           ) : (
             <View style={r.donutRow}>
-              <DonutChart segments={donutSegments} sym={sym} currencyRate={currencyRate} />
+              <DonutChart segments={donutSegments} sym={sym} />
               <View style={r.legend}>
                 {categoryData.totals.map(cat => (
                   <View key={cat.id} style={r.legendItem}>
@@ -368,7 +369,7 @@ export default function ReportsScreen() {
                         <Text style={r.legendName} numberOfLines={1}>
                           {cat.label.split('&')[0].trim()}
                         </Text>
-                        <Text style={r.legendAmt}>{`${sym} ${(cat.total * currencyRate).toFixed(0)}`}</Text>
+                        <Text style={r.legendAmt}>{`${sym} ${cat.total.toFixed(0)}`}</Text>
                       </View>
                       <View style={r.legendBarBg}>
                         <View
@@ -395,7 +396,7 @@ export default function ReportsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={r.taxTitle}>Tax Tip</Text>
             <Text style={r.taxBody}>
-              You have <Text style={{ fontWeight: '700' }}>{sym}{(totalExpenses * currencyRate).toFixed(2)}</Text> in
+              You have <Text style={{ fontWeight: '700' }}>{sym}{totalExpenses.toFixed(2)}</Text> in
               business expenses this {period === 'yearly' ? 'year' : period === 'weekly' ? 'week' : 'month'} that may be tax deductible.
             </Text>
           </View>
@@ -409,7 +410,7 @@ export default function ReportsScreen() {
             style={[r.exportBtn, exporting && { opacity: 0.6 }]}
           >
             {exporting ? (
-              <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: 'transparent', borderTopColor: '#fff' }} />
+              <Spinner size={20} color="#fff" />
             ) : (
               <>
                 <Text style={r.exportIcon}>📤</Text>

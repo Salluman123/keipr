@@ -16,6 +16,8 @@ import { useExpenseStore } from '../../store/expenseStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
+import { removeAllReceipts } from '../../lib/receiptStorage'
+import Spinner from '../../components/Spinner'
 import type { MainStackParamList } from '../../navigation/MainStack'
 import type { Expense } from '../../types'
 
@@ -73,10 +75,13 @@ export default function SettingsScreen() {
   const accountLabel = accountTypeRaw === 'freelancer' ? 'Freelancer'
     : accountTypeRaw === 'business' ? 'Business' : 'Personal'
 
-  // Preference state
-  const [notifications, setNotifications] = useState(true)
-  const [biometric, setBiometric] = useState(false)
-  const [darkMode] = useState(true)
+  const toggleNotifications = () => {
+    Alert.alert('Coming Soon', 'Push notifications will be available in a future update.')
+  }
+
+  const toggleBiometric = () => {
+    Alert.alert('Coming Soon', 'Biometric lock will be available in a future update.')
+  }
 
   // Edit profile
   const [editVisible, setEditVisible] = useState(false)
@@ -86,6 +91,7 @@ export default function SettingsScreen() {
   // Loading
   const [exportingAll, setExportingAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
 
   const openEditProfile = () => {
     setEditName(name)
@@ -155,7 +161,9 @@ export default function SettingsScreen() {
             try {
               const { error } = await supabase.from('expenses').delete().eq('user_id', userId)
               if (error) throw error
-              setTimeout(() => fetchExpenses(userId, selectedMonth, selectedYear), 300)
+              await new Promise(resolve => setTimeout(resolve, 300))
+              await fetchExpenses(userId, selectedMonth, selectedYear)
+              await removeAllReceipts(userId)
               Alert.alert('Done', 'All expense data has been deleted.')
             } catch (e: any) {
               Alert.alert('Error', e?.message ?? Strings.errors.deleteAll)
@@ -165,6 +173,31 @@ export default function SettingsScreen() {
           },
         },
       ]
+    )
+  }
+
+  const deleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and ALL data. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete My Account', style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true)
+            try {
+              await removeAllReceipts(userId)
+              const { error } = await supabase.rpc('delete_account')
+              if (error) throw error
+              await signOut()
+            } catch (e: any) {
+              Alert.alert('Error', e?.message ?? Strings.errors.generic)
+              setDeletingAccount(false)
+            }
+          },
+        },
+      ],
     )
   }
 
@@ -243,7 +276,7 @@ export default function SettingsScreen() {
                       style={[s.modalSaveBtn, (!editName.trim() || savingProfile) && { opacity: 0.6 }]}
                     >
                       {savingProfile ? (
-                        <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: 'transparent', borderTopColor: '#fff' }} />
+                        <Spinner size={18} color="#fff" />
                       ) : (
                         <Text style={s.modalSaveText}>Save</Text>
                       )}
@@ -318,10 +351,11 @@ export default function SettingsScreen() {
         <SettingsCard>
           <Row
             icon="🔔" label="Notifications"
+            onPress={toggleNotifications}
             right={
               <Switch
-                value={notifications}
-                onValueChange={setNotifications}
+                value={false}
+                onValueChange={toggleNotifications}
                 trackColor={{ false: Colors.border, true: Colors.purpleLight }}
                 thumbColor="#fff"
                 ios_backgroundColor={Colors.border}
@@ -331,10 +365,11 @@ export default function SettingsScreen() {
           <Sep />
           <Row
             icon="🔒" label="Biometric Lock"
+            onPress={toggleBiometric}
             right={
               <Switch
-                value={biometric}
-                onValueChange={setBiometric}
+                value={false}
+                onValueChange={toggleBiometric}
                 trackColor={{ false: Colors.border, true: Colors.purpleLight }}
                 thumbColor="#fff"
                 ios_backgroundColor={Colors.border}
@@ -344,7 +379,7 @@ export default function SettingsScreen() {
           <Sep />
           <Row
             icon="🌙" label="Dark Mode"
-            right={toggle(darkMode)}
+            right={toggle(true)}
           />
           <Sep />
           <Row
@@ -389,9 +424,16 @@ export default function SettingsScreen() {
           <Row icon="🔑" label="Change Password" onPress={changePassword} />
           <Sep />
           <Row icon="🚪" label="Sign Out" onPress={handleSignOut} danger />
+          <Sep />
+          <Row
+            icon="⛔" label={deletingAccount ? 'Deleting Account…' : 'Delete Account'}
+            onPress={deletingAccount ? undefined : deleteAccount}
+            disabled={deletingAccount}
+            danger
+          />
         </SettingsCard>
 
-        <Text style={s.version}>{Strings.appName} {Strings.version} · Phase 5</Text>
+        <Text style={s.version}>{Strings.appName} {Strings.version}</Text>
       </ScrollView>
     </View>
   )

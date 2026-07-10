@@ -1,0 +1,51 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://sydapobvfnaupdipefvi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5ZGFwb2J2Zm5hdXBkaXBlZnZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDIzOTYsImV4cCI6MjA5NDA3ODM5Nn0.J9LlpW-ZdQUEw1rdcQAmnQU_qW9i3Qh9vQHyGD73YpE",
+        "EXPO_PUBLIC_RC_API_KEY": "appl_fATOFYkMflRWhMMrSfdNFpKIfFq"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://sydapobvfnaupdipefvi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5ZGFwb2J2Zm5hdXBkaXBlZnZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDIzOTYsImV4cCI6MjA5NDA3ODM5Nn0.J9LlpW-ZdQUEw1rdcQAmnQU_qW9i3Qh9vQHyGD73YpE",
+        "EXPO_PUBLIC_RC_API_KEY": "appl_fATOFYkMflRWhMMrSfdNFpKIfFq"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://sydapobvfnaupdipefvi.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5ZGFwb2J2Zm5hdXBkaXBlZnZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDIzOTYsImV4cCI6MjA5NDA3ODM5Nn0.J9LlpW-ZdQUEw1rdcQAmnQU_qW9i3Qh9vQHyGD73YpE",
+        "EXPO_PUBLIC_RC_API_KEY": "appl_fATOFYkMflRWhMMrSfdNFpKIfFq"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "salman.waheed86@gmail.com",
+        "ascAppId": "6772185206",
+        "appleTeamId": "EWQ583BYPE"
+      }
+    }
+  }
+}

@@ -22,7 +22,8 @@ import Svg, {
 } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native'
-import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
+import { getCurrencySymbol, toDisplayAmount } from '../../lib/currency'
+import { parseLocalDate } from '../../lib/date'
 import type { CompositeNavigationProp } from '@react-navigation/native'
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
@@ -57,8 +58,11 @@ function SpendingChart({ expenses, month, year }: { expenses: Expense[]; month: 
   const dailyTotals = Array<number>(daysInMonth).fill(0)
   expenses
     .forEach(e => {
-      const d = new Date(e.date).getDate() - 1
-      if (d >= 0 && d < daysInMonth) dailyTotals[d] += e.amount
+      const [, , day] = e.date.split('-').map(Number)
+      const d = day - 1
+      if (d >= 0 && d < daysInMonth) {
+        dailyTotals[d] += toDisplayAmount(e.amount, e.currency || 'USD', 1)
+      }
     })
 
   const hasData = dailyTotals.some(v => v > 0)
@@ -119,7 +123,7 @@ function SpendingChart({ expenses, month, year }: { expenses: Expense[]; month: 
 
 function ExpenseRow({ expense, sym, currencyRate }: { expense: Expense; sym: string; currencyRate: number }) {
   const cat = EXPENSE_CATEGORIES.find(c => c.id === expense.category)
-  const dateStr = new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const dateStr = parseLocalDate(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
     <View style={rowStyles.row}>
@@ -131,7 +135,7 @@ function ExpenseRow({ expense, sym, currencyRate }: { expense: Expense; sym: str
         <Text style={rowStyles.meta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
       </View>
       <Text style={rowStyles.amount}>
-        -{sym}{(expense.amount * currencyRate / getCurrencyRate(expense.currency || 'USD')).toFixed(2)}
+        -{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}
       </Text>
     </View>
   )
@@ -167,6 +171,7 @@ export default function HomeScreen() {
   const {
     expenses,
     loading,
+    fetchError,
     selectedMonth,
     selectedYear,
     totalIncome,
@@ -368,6 +373,12 @@ export default function HomeScreen() {
               <Text style={styles.emptyIcon}>⏳</Text>
               <Text style={styles.emptyText}>Loading…</Text>
             </View>
+          ) : fetchError && expenses.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>📡</Text>
+              <Text style={styles.emptyText}>Couldn't load expenses</Text>
+              <Text style={styles.emptySubtext}>Check your connection, then pull down to try again</Text>
+            </View>
           ) : expenses.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🧾</Text>
@@ -407,11 +418,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     fontWeight: '600',
     marginBottom: 3,
-  },
-  appName: {
-    fontSize: 22,
-    fontFamily: 'Georgia',
-    color: Colors.offWhite,
   },
   avatar: {
     width: 44,

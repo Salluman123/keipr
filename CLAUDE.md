@@ -3,7 +3,7 @@
 ## App Overview
 Keipr is a mobile bookkeeping app for freelancers and small business owners.
 Built with Expo + React Native + Supabase + Claude API.
-Handle: @getkeipr | Domain: keipr.com
+Handle: @getkeipr | Domain: getkeipr.com
 
 ## Brand Colors
 - Purple Light: #9F67F7

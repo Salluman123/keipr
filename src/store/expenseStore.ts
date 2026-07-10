@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
 import { supabase } from '../lib/supabase'
-import { getCurrencyRate } from '../lib/currency'
+import { getCurrencyRate, toDisplayAmount } from '../lib/currency'
+import { removeReceipt } from '../lib/receiptStorage'
 import type { Expense } from '../types'
 import type { CategoryId } from '../constants/categories'
 
@@ -23,6 +24,7 @@ interface FetchParams { userId: string; month: number; year: number }
 interface ExpenseStore {
   expenses: Expense[]
   loading: boolean
+  fetchError: boolean
   selectedMonth: number
   selectedYear: number
   totalIncome: number
@@ -40,9 +42,9 @@ interface ExpenseStore {
 
 const computeStats = (expenses: Expense[]) => ({
   totalIncome: 0,
-  // Normalise to USD so display screens can multiply by any display-currency rate
+  // Normalise to USD (rate 1) so HomeScreen can multiply by any display-currency rate
   totalExpenses: expenses.reduce(
-    (sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0
+    (sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', 1), 0
   ),
 })
 
@@ -65,6 +67,7 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
   return {
   expenses: [],
   loading: false,
+  fetchError: false,
   selectedMonth: now.getMonth(),
   selectedYear: now.getFullYear(),
   totalIncome: 0,
@@ -82,7 +85,7 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
   },
 
   fetchExpenses: async (userId, month, year) => {
-    set({ loading: true, lastFetchParams: { userId, month, year } })
+    set({ loading: true, fetchError: false, lastFetchParams: { userId, month, year } })
     try {
       const { start, end } = dateRange(month, year)
 
@@ -103,21 +106,27 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
 
       const { data: prevData } = await supabase
         .from('expenses')
-        .select('amount')
+        .select('amount,currency')
         .eq('user_id', userId)
         .gte('date', prev.start)
         .lte('date', prev.end)
 
       const prevTotal = (prevData ?? [])
-        .reduce((sum: number, e: any) => sum + (e.amount ?? 0), 0)
+        .reduce(
+          (sum: number, e: { amount: number | null; currency: string | null }) =>
+            sum + toDisplayAmount(e.amount ?? 0, e.currency || 'USD', 1),
+          0,
+        )
 
       const currTotal = computeStats(expenses).totalExpenses
       const monthChangePercent =
         prevTotal > 0 ? ((currTotal - prevTotal) / prevTotal) * 100 : null
 
-      set({ expenses, ...computeStats(expenses), monthChangePercent, loading: false })
+      set({ expenses, ...computeStats(expenses), monthChangePercent, loading: false, fetchError: false })
     } catch {
-      set({ loading: false })
+      // Keep whatever is already on screen, but flag the failure so screens can
+      // show "couldn't load" instead of a false "no expenses yet" empty state.
+      set({ loading: false, fetchError: true })
     }
   },
 
@@ -127,25 +136,43 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
       .insert(expense)
       .select()
       .single()
-    if (error) throw error
+    if (error) {
+      if (error.message.includes('FREE_EXPENSE_LIMIT_REACHED')) {
+        throw new Error('You have reached the monthly free expense limit.')
+      }
+      throw error
+    }
 
     setTimeout(() => {
-      const { lastFetchParams } = get()
-      if (lastFetchParams) {
-        get().fetchExpenses(lastFetchParams.userId, lastFetchParams.month, lastFetchParams.year)
+      const { lastFetchParams, selectedMonth, selectedYear } = get()
+      const params = lastFetchParams ?? {
+        userId: expense.user_id,
+        month: selectedMonth,
+        year: selectedYear,
       }
+      get().fetchExpenses(params.userId, params.month, params.year)
     }, 300)
   },
 
   deleteExpense: async (id) => {
+    const receiptValue = get().expenses.find(expense => expense.id === id)?.receipt_image_url
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) throw error
+    let cleanupFailed = false
+    try {
+      await removeReceipt(receiptValue)
+    } catch {
+      cleanupFailed = true
+    }
     setTimeout(() => {
       const { lastFetchParams } = get()
       if (lastFetchParams) {
         get().fetchExpenses(lastFetchParams.userId, lastFetchParams.month, lastFetchParams.year)
       }
     }, 300)
+    if (cleanupFailed) {
+      throw new Error('Expense deleted, but its receipt could not be removed.')
+    }
   },
   }
 })

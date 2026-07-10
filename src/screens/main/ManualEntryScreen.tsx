@@ -15,7 +15,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
-import * as FileSystem from 'expo-file-system/legacy'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { Colors } from '../../constants/colors'
@@ -25,7 +24,11 @@ import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
 import { getCurrencySymbol } from '../../lib/currency'
-import { supabase } from '../../lib/supabase'
+import { FREE_EXPENSE_LIMIT, hasReachedExpenseLimit } from '../../lib/expenseLimits'
+import { removeReceipt, uploadReceiptImage } from '../../lib/receiptStorage'
+import { getLocalDateString, getTodayMidnight } from '../../lib/date'
+import DateStepper from '../../components/DateStepper'
+import Spinner from '../../components/Spinner'
 import type { MainStackParamList } from '../../navigation/MainStack'
 
 type Props = { navigation: NativeStackNavigationProp<MainStackParamList, 'ManualEntry'> }
@@ -63,73 +66,18 @@ const so = StyleSheet.create({
   label: { fontSize: 22, fontFamily: 'Georgia', color: '#F0EEFF' },
 })
 
-// ─── Date stepper ─────────────────────────────────────────────────────────────
-
-function DateStepper({ value, onChange }: { value: Date; onChange: (d: Date) => void }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  const isToday = value.getTime() === today.getTime()
-
-  const shift = (n: number) => {
-    const d = new Date(value); d.setDate(d.getDate() + n)
-    if (d > today) return
-    onChange(d)
-  }
-
-  const label = value.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-
-  return (
-    <View style={ds.row}>
-      <TouchableOpacity onPress={() => shift(-1)} style={ds.arrow}>
-        <Text style={ds.arrowText}>‹</Text>
-      </TouchableOpacity>
-      <Text style={ds.value}>{label}</Text>
-      <TouchableOpacity onPress={() => shift(1)} style={[ds.arrow, isToday && ds.arrowDisabled]} disabled={isToday}>
-        <Text style={[ds.arrowText, isToday && { color: Colors.border }]}>›</Text>
-      </TouchableOpacity>
-    </View>
-  )
-}
-const ds = StyleSheet.create({
-  row: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: Colors.inputBg, borderRadius: 12,
-    borderWidth: 1, borderColor: Colors.border,
-    paddingHorizontal: 6, paddingVertical: 4,
-  },
-  arrow: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  arrowDisabled: { opacity: 0.3 },
-  arrowText: { fontSize: 24, color: Colors.purpleLight, lineHeight: 28 },
-  value: { fontSize: 15, color: Colors.offWhite, fontWeight: '500' },
-})
-
 // ─── Upload helper ─────────────────────────────────────────────────────────────
-
-async function uploadReceiptImage(uri: string, userId: string): Promise<string | null> {
-  try {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any })
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    const path = `${userId}/${Date.now()}.jpg`
-    const { error } = await supabase.storage.from('receipts').upload(path, bytes, { contentType: 'image/jpeg' })
-    if (error) return null
-    const { data } = supabase.storage.from('receipts').getPublicUrl(path)
-    return data.publicUrl
-  } catch {
-    return null
-  }
-}
 
 // ─── ManualEntryScreen ────────────────────────────────────────────────────────
 
 export default function ManualEntryScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
-  const { addExpense, expenses, currency } = useExpenseStore()
+  const { addExpense, currency } = useExpenseStore()
   const { isPro } = usePurchaseStore()
   const sym = getCurrencySymbol(currency)
 
-  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const today = getTodayMidnight()
 
   const [vendor, setVendor] = useState('')
   const [amount, setAmount] = useState('')
@@ -150,14 +98,27 @@ export default function ManualEntryScreen({ navigation }: Props) {
     Alert.alert('Receipt Photo', 'Choose source', [
       {
         text: 'Camera', onPress: async () => {
-          const r = await ImagePicker.launchCameraAsync({ quality: 0.75 })
-          if (!r.canceled) setReceiptUri(r.assets[0].uri)
+          try {
+            const perm = await ImagePicker.requestCameraPermissionsAsync()
+            if (!perm.granted) {
+              Alert.alert('Camera Access Needed', 'Allow camera access in Settings to take a receipt photo, or choose one from your gallery.')
+              return
+            }
+            const r = await ImagePicker.launchCameraAsync({ quality: 0.75 })
+            if (!r.canceled && r.assets[0]) setReceiptUri(r.assets[0].uri)
+          } catch {
+            Alert.alert('Error', 'Could not open the camera. Please try the gallery instead.')
+          }
         },
       },
       {
         text: 'Gallery', onPress: async () => {
-          const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 })
-          if (!r.canceled) setReceiptUri(r.assets[0].uri)
+          try {
+            const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 })
+            if (!r.canceled && r.assets[0]) setReceiptUri(r.assets[0].uri)
+          } catch {
+            Alert.alert('Error', 'Could not open your photo library. Please try again.')
+          }
         },
       },
       { text: 'Cancel', style: 'cancel' },
@@ -165,37 +126,45 @@ export default function ManualEntryScreen({ navigation }: Props) {
   }
 
   const handleSave = async () => {
+    if (!user) { Alert.alert('Not signed in', 'Please sign in and try again.'); return }
     if (!vendor.trim()) { Alert.alert('Required', 'Please enter a vendor name.'); return }
     const parsed = parseFloat(amount)
     if (isNaN(parsed) || parsed <= 0) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return }
 
-    if (!isPro && expenses.length >= 10) {
-      Alert.alert(
-        'Free Limit Reached',
-        'You\'ve used all 10 free expenses this month. Upgrade to Pro for unlimited expenses.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          { text: 'Upgrade to Pro', onPress: () => navigation.navigate('Paywall') },
-        ],
-      )
+    try {
+      if (await hasReachedExpenseLimit(user.id, isPro)) {
+        Alert.alert(
+          'Free Limit Reached',
+          `You've used all ${FREE_EXPENSE_LIMIT} free expenses. Upgrade to Pro for unlimited expenses.`,
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade to Pro', onPress: () => navigation.navigate('Paywall') },
+          ],
+        )
+        return
+      }
+    } catch {
+      Alert.alert('Unable to verify limit', 'Please check your connection and try again.')
       return
     }
 
     setSaving(true)
+    let receiptUrl: string | null = null
     try {
-      const receiptUrl = receiptUri ? await uploadReceiptImage(receiptUri, user!.id) : null
+      receiptUrl = receiptUri ? await uploadReceiptImage(receiptUri, user.id) : null
       await addExpense({
-        user_id: user!.id,
+        user_id: user.id,
         vendor: vendor.trim(),
         amount: parsed,
         currency,
-        date: date.toISOString().split('T')[0],
+        date: getLocalDateString(date),
         category,
         notes: notes.trim() || undefined,
         receipt_image_url: receiptUrl ?? undefined,
       })
       setShowSuccess(true)
     } catch (e: any) {
+      await removeReceipt(receiptUrl).catch(() => {})
       Alert.alert('Save failed', e?.message ?? 'Could not save expense. Please try again.')
     } finally {
       setSaving(false)
@@ -339,7 +308,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
               style={[styles.saveBtn, saving && { opacity: 0.7 }]}
             >
               {saving ? (
-                <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: 'transparent', borderTopColor: '#fff' }} />
+                <Spinner size={20} color="#fff" />
               ) : (
                 <Text style={styles.saveBtnText}>Save Expense</Text>
               )}

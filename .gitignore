@@ -51,3 +51,9 @@ build/
 
 # logs
 *.log
+
+# Supabase CLI local state
+supabase/.temp/
+
+# Office lock files
+~$*

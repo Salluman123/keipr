@@ -5,17 +5,32 @@ import Purchases from 'react-native-purchases'
 import AppNavigator from './src/navigation/AppNavigator'
 import { useAuthStore } from './src/store/authStore'
 import { usePurchaseStore } from './src/store/purchaseStore'
-
-const RC_API_KEY = 'test_lOJhCwZPKnyFyqOTrThIwClckci'
+import { useExpenseStore } from './src/store/expenseStore'
+import { getCurrencyRate, refreshExchangeRates } from './src/lib/currency'
 
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize)
   const checkSubscription = usePurchaseStore((state) => state.checkSubscription)
 
   useEffect(() => {
-    try { Purchases.configure({ apiKey: RC_API_KEY }) } catch {}
-    initialize()
-    checkSubscription()
+    const boot = async () => {
+      try {
+        Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_API_KEY })
+        // Real-time entitlement updates — covers delayed sandbox activations and
+        // any server-side subscription changes without requiring an app restart.
+        Purchases.addCustomerInfoUpdateListener((info) => {
+          usePurchaseStore.setState({ isPro: 'get.keipr Pro' in info.entitlements.active })
+        })
+      } catch {}
+      try { await initialize() } catch {}
+      try { await checkSubscription() } catch {}
+      try {
+        await refreshExchangeRates()
+        const { currency } = useExpenseStore.getState()
+        useExpenseStore.setState({ currencyRate: getCurrencyRate(currency) })
+      } catch {}
+    }
+    boot()
   }, [])
 
   return (

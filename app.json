@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "keipr",
+    "name": "Keipr",
     "slug": "keipr",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,20 +13,73 @@
       "backgroundColor": "#0D0D14"
     },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.getkeipr.app",
+      "buildNumber": "2",
+      "supportsTablet": false,
+      "privacyPolicyUrl": "https://getkeipr.com/privacy",
+      "infoPlistSupportedUIOrientations": [
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationPortrait",
+        "UIInterfaceOrientationPortrait"
+      ],
+      "infoPlist": {
+        "NSCameraUsageDescription": "Keipr uses your camera to scan and capture receipt photos.",
+        "NSPhotoLibraryUsageDescription": "Keipr accesses your photo library so you can attach receipt images to expenses.",
+        "NSPhotoLibraryAddUsageDescription": "Keipr saves receipt photos to your library.",
+        "NSMicrophoneUsageDescription": "Keipr requires microphone access as part of camera functionality.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.getkeipr.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D0D14"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "expo-apple-authentication",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Keipr uses your camera to scan and capture receipt photos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Keipr accesses your photo library so you can attach receipt images to expenses.",
+          "cameraPermission": "Keipr uses your camera to capture receipt photos."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9241edde-9ac0-49b8-83e8-b98f535dd400"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/9241edde-9ac0-49b8-83e8-b98f535dd400"
+    }
   }
 }

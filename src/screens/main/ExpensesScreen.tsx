@@ -5,13 +5,15 @@ import {
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useFocusEffect } from '@react-navigation/native'
 import { Colors } from '../../constants/colors'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useExpenseStore } from '../../store/expenseStore'
-import { getCurrencySymbol, getCurrencyRate } from '../../lib/currency'
+import { getCurrencySymbol, toDisplayAmount } from '../../lib/currency'
 import { useAuthStore } from '../../store/authStore'
 import type { Expense } from '../../types'
 import type { CategoryId } from '../../constants/categories'
+import { getTodayMidnight, parseLocalDate } from '../../lib/date'
 
 type FilterId = 'all' | CategoryId
 
@@ -23,13 +25,8 @@ const FILTERS: Array<{ id: FilterId; label: string }> = [
   })),
 ]
 
-function parseLocalDate(s: string): Date {
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
 function groupLabel(dateStr: string): string {
-  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const today = getTodayMidnight()
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
   const d = parseLocalDate(dateStr); d.setHours(0, 0, 0, 0)
   if (d.getTime() === today.getTime()) return 'Today'
@@ -121,7 +118,7 @@ const sk = StyleSheet.create({
 export default function ExpensesScreen() {
   const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
-  const { expenses, loading, fetchExpenses, deleteExpense, selectedMonth, selectedYear, currency, currencyRate } = useExpenseStore()
+  const { expenses, loading, fetchError, fetchExpenses, deleteExpense, selectedMonth, selectedYear, currency, currencyRate } = useExpenseStore()
   const sym = getCurrencySymbol(currency)
   const userId = user?.id ?? ''
 
@@ -136,8 +133,8 @@ export default function ExpensesScreen() {
   }), [expenses, filter, search])
 
   const totalOut = useMemo(
-    () => filtered.reduce((sum, e) => sum + e.amount / getCurrencyRate(e.currency || 'USD'), 0),
-    [filtered]
+    () => filtered.reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0),
+    [filtered, currencyRate]
   )
 
   const { groupOrder, groupMap } = useMemo(() => {
@@ -151,6 +148,12 @@ export default function ExpensesScreen() {
     return { groupOrder: order, groupMap: map }
   }, [filtered])
 
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) fetchExpenses(userId, selectedMonth, selectedYear)
+    }, [userId, selectedMonth, selectedYear])
+  )
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
     await fetchExpenses(userId, selectedMonth, selectedYear)
@@ -160,7 +163,7 @@ export default function ExpensesScreen() {
   const confirmDelete = (expense: Expense) => {
     Alert.alert(
       'Delete Expense',
-      `Delete "${expense.vendor}" for ${sym}${(expense.amount * currencyRate).toFixed(2)}?`,
+      `Delete "${expense.vendor}" for ${sym}${toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -238,7 +241,7 @@ export default function ExpensesScreen() {
           <View style={[s.pill, { borderColor: Colors.error + '55' }]}>
             <Ionicons name="arrow-up-outline" size={13} color={Colors.error} />
             <Text style={[s.pillLabel, { color: Colors.error }]}>Total Out</Text>
-            <Text style={[s.pillAmt, { color: Colors.error }]}>{sym}{(totalOut * currencyRate).toFixed(2)}</Text>
+            <Text style={[s.pillAmt, { color: Colors.error }]}>{sym}{totalOut.toFixed(2)}</Text>
           </View>
         </View>
 
@@ -246,6 +249,12 @@ export default function ExpensesScreen() {
         {loading && expenses.length === 0 ? (
           <View>
             {[...Array(5)].map((_, i) => <SkeletonRow key={i} />)}
+          </View>
+        ) : fetchError && expenses.length === 0 ? (
+          <View style={s.empty}>
+            <Text style={s.emptyIcon}>📡</Text>
+            <Text style={s.emptyTitle}>Couldn't load expenses</Text>
+            <Text style={s.emptySubtext}>Check your connection, then pull down to try again</Text>
           </View>
         ) : groupOrder.length === 0 ? (
           <View style={s.empty}>
@@ -281,7 +290,7 @@ export default function ExpensesScreen() {
                         <Text style={s.vendor} numberOfLines={1}>{expense.vendor}</Text>
                         <Text style={s.rowMeta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
                       </View>
-                      <Text style={s.amount}>-{sym}{(expense.amount * currencyRate / getCurrencyRate(expense.currency || 'USD')).toFixed(2)}</Text>
+                      <Text style={s.amount}>-{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}</Text>
                     </TouchableOpacity>
                   </SwipeableRow>
                 )

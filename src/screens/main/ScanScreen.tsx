@@ -14,18 +14,22 @@ import {
 } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import * as ImagePicker from 'expo-image-picker'
-import * as FileSystem from 'expo-file-system/legacy'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { Colors } from '../../constants/colors'
 import { getCurrencySymbol } from '../../lib/currency'
+import { FREE_EXPENSE_LIMIT, hasReachedExpenseLimit } from '../../lib/expenseLimits'
+import { removeReceipt, uploadReceiptImage } from '../../lib/receiptStorage'
+import { getLocalDateString, getTodayMidnight, parseLocalDate } from '../../lib/date'
+import DateStepper from '../../components/DateStepper'
+import Spinner from '../../components/Spinner'
 import { EXPENSE_CATEGORIES } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
+import { usePurchaseStore } from '../../store/purchaseStore'
 import { extractFromImage, type ExtractedReceipt } from '../../lib/claudeOCR'
-import { supabase } from '../../lib/supabase'
 import type { CategoryId } from '../../constants/categories'
 import type { MainStackParamList } from '../../navigation/MainStack'
 
@@ -118,34 +122,19 @@ const ss = StyleSheet.create({
 
 // ─── Supabase storage upload ──────────────────────────────────────────────────
 
-async function uploadReceiptImage(uri: string, userId: string): Promise<string | null> {
-  try {
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any })
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-
-    const path = `${userId}/${Date.now()}.jpg`
-    const { error } = await supabase.storage.from('receipts').upload(path, bytes, { contentType: 'image/jpeg' })
-    if (error) return null
-
-    const { data } = supabase.storage.from('receipts').getPublicUrl(path)
-    return data.publicUrl
-  } catch {
-    return null
-  }
-}
-
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ScanScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets()
   const { user } = useAuthStore()
   const { addExpense, currency: storeCurrency } = useExpenseStore()
+  const { isPro } = usePurchaseStore()
   const [permission, requestPermission] = useCameraPermissions()
 
   const cameraRef = useRef<CameraView>(null)
   const [step, setStep] = useState<Step>('camera')
+  const [cameraReady, setCameraReady] = useState(false)
+  const [cameraError, setCameraError] = useState(false)
   const [flash, setFlash] = useState(false)
   const [imageUri, setImageUri] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -157,7 +146,8 @@ export default function ScanScreen({ navigation }: Props) {
   const [expenseCurrency, setExpenseCurrency] = useState(storeCurrency)
   const [vendor, setVendor] = useState('')
   const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const todayLocal = getTodayMidnight()
+  const [date, setDate] = useState<Date>(todayLocal)
   const [category, setCategory] = useState<CategoryId>('other')
   const [notes, setNotes] = useState('')
   const [vendorFocused, setVendorFocused] = useState(false)
@@ -171,7 +161,11 @@ export default function ScanScreen({ navigation }: Props) {
       const data: ExtractedReceipt = await extractFromImage(uri)
       setVendor(data.vendor ?? '')
       setAmount(data.amount != null ? String(data.amount) : '')
-      setDate(data.date ?? new Date().toISOString().split('T')[0])
+      if (data.date) {
+        setDate(parseLocalDate(data.date))
+      } else {
+        setDate(getTodayMidnight())
+      }
       if (data.category) setCategory(data.category)
       setExpenseCurrency(data.currency ?? storeCurrency)
       setStep('review')
@@ -189,6 +183,12 @@ export default function ScanScreen({ navigation }: Props) {
       if (photo?.uri) {
         setImageUri(photo.uri)
         await processImage(photo.uri)
+      } else {
+        // Camera not ready / no frame returned — never fail silently.
+        Alert.alert(
+          'Camera Not Ready',
+          'The camera did not return a photo. Please try again, or pick the receipt from your photo library.',
+        )
       }
     } catch {
       Alert.alert('Error', 'Could not capture photo. Please try again.')
@@ -196,36 +196,65 @@ export default function ScanScreen({ navigation }: Props) {
   }
 
   const pickFromGallery = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    })
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri)
-      await processImage(result.assets[0].uri)
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      })
+      if (!result.canceled && result.assets[0]) {
+        setImageUri(result.assets[0].uri)
+        await processImage(result.assets[0].uri)
+      }
+    } catch {
+      Alert.alert('Error', 'Could not open your photo library. Please try again.')
     }
   }
 
+  const retakePhoto = () => {
+    setCameraReady(false)
+    setStep('camera')
+  }
+
   const handleSave = async () => {
+    if (!user) { Alert.alert('Not signed in', 'Please sign in and try again.'); return }
     if (!vendor.trim()) { Alert.alert('Missing field', 'Please enter a vendor name.'); return }
     const parsedAmount = parseFloat(amount)
     if (isNaN(parsedAmount) || parsedAmount <= 0) { Alert.alert('Invalid amount', 'Please enter a valid amount.'); return }
 
-    setSaving(true)
     try {
-      const receiptUrl = imageUri ? await uploadReceiptImage(imageUri, user!.id) : null
+      if (await hasReachedExpenseLimit(user.id, isPro)) {
+        Alert.alert(
+          'Free Limit Reached',
+          `You've used all ${FREE_EXPENSE_LIMIT} free expenses. Upgrade to Pro for unlimited expenses.`,
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Upgrade to Pro', onPress: () => navigation.navigate('Paywall') },
+          ],
+        )
+        return
+      }
+    } catch {
+      Alert.alert('Unable to verify limit', 'Please check your connection and try again.')
+      return
+    }
+
+    setSaving(true)
+    let receiptUrl: string | null = null
+    try {
+      receiptUrl = imageUri ? await uploadReceiptImage(imageUri, user.id) : null
       await addExpense({
-        user_id: user!.id,
+        user_id: user.id,
         vendor: vendor.trim(),
         amount: parsedAmount,
         currency: expenseCurrency,
-        date,
+        date: getLocalDateString(date),
         category,
         notes: notes.trim() || undefined,
         receipt_image_url: receiptUrl ?? undefined,
       })
       setShowSuccess(true)
     } catch (e: any) {
+      await removeReceipt(receiptUrl).catch(() => {})
       Alert.alert('Save failed', e?.message ?? 'Could not save expense.')
     } finally {
       setSaving(false)
@@ -252,11 +281,39 @@ export default function ScanScreen({ navigation }: Props) {
     )
   }
 
+  // ── Camera unavailable (mount error — e.g. iPad compatibility mode) ──
+  if (step === 'camera' && cameraError) {
+    return (
+      <View style={[styles.root, styles.permissionView]}>
+        <Ionicons name="camera-outline" size={56} color={Colors.gray} />
+        <Text style={styles.permTitle}>Camera Unavailable</Text>
+        <Text style={styles.permSub}>
+          The camera could not be started on this device. You can still scan a receipt from your photo library.
+        </Text>
+        <TouchableOpacity onPress={pickFromGallery} style={styles.permBtn}>
+          <LinearGradient colors={[Colors.purpleLight, Colors.purpleDark]} style={styles.permBtnGrad}>
+            <Text style={styles.permBtnText}>Choose from Library</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 12 }}>
+          <Text style={{ color: Colors.gray, fontSize: 14 }}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    )
+  }
+
   // ── Camera step ──
   if (step === 'camera') {
     return (
       <View style={styles.root}>
-        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" flash={flash ? 'on' : 'off'} />
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          flash={flash ? 'on' : 'off'}
+          onCameraReady={() => setCameraReady(true)}
+          onMountError={() => setCameraError(true)}
+        />
 
         {/* Dark vignette outside scan area */}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -291,8 +348,15 @@ export default function ScanScreen({ navigation }: Props) {
 
         {/* Bottom controls */}
         <View style={[styles.cameraBottom, { paddingBottom: insets.bottom + 24 }]}>
-          <Text style={styles.cameraHint}>Point camera at receipt</Text>
-          <TouchableOpacity onPress={capturePhoto} style={styles.captureOuter} activeOpacity={0.8}>
+          <Text style={styles.cameraHint}>
+            {cameraReady ? 'Point camera at receipt' : 'Starting camera…'}
+          </Text>
+          <TouchableOpacity
+            onPress={capturePhoto}
+            style={[styles.captureOuter, !cameraReady && { opacity: 0.4 }]}
+            activeOpacity={0.8}
+            disabled={!cameraReady}
+          >
             <View style={styles.captureInner} />
           </TouchableOpacity>
         </View>
@@ -320,7 +384,7 @@ export default function ScanScreen({ navigation }: Props) {
     <View style={styles.root}>
       {showSuccess && <SuccessOverlay onDone={() => navigation.goBack()} />}
       <View style={[styles.reviewHeader, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity onPress={() => setStep('camera')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity onPress={retakePhoto} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.retakeLink}>‹ Retake</Text>
         </TouchableOpacity>
         <Text style={styles.reviewTitle}>Review Receipt</Text>
@@ -385,17 +449,7 @@ export default function ScanScreen({ navigation }: Props) {
           {/* Date */}
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>DATE</Text>
-            <View style={styles.inputRow}>
-              <Ionicons name="calendar-outline" size={16} color={Colors.gray} style={{ marginRight: 10 }} />
-              <TextInput
-                style={styles.fieldInput}
-                value={date}
-                onChangeText={setDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={Colors.gray}
-                keyboardType="numbers-and-punctuation"
-              />
-            </View>
+            <DateStepper value={date} onChange={setDate} />
           </View>
 
           {/* Category */}
@@ -444,14 +498,14 @@ export default function ScanScreen({ navigation }: Props) {
             style={[styles.saveBtn, saving && { opacity: 0.7 }]}
           >
             {saving ? (
-              <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: 'transparent', borderTopColor: Colors.white }} />
+              <Spinner size={20} color={Colors.white} />
             ) : (
               <Text style={styles.saveBtnText}>Save Expense</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setStep('camera')} style={styles.retakeBtn}>
+        <TouchableOpacity onPress={retakePhoto} style={styles.retakeBtn}>
           <Text style={styles.retakeBtnText}>Retake Photo</Text>
         </TouchableOpacity>
       </ScrollView>

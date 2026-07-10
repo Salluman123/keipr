@@ -5,10 +5,7 @@ import { useAuthStore } from '../store/authStore'
 import { Colors } from '../constants/colors'
 import AuthStack from './AuthStack'
 import MainStack from './MainStack'
-
-const Spinner = ({ size = 36, color = '#9F67F7' }) => (
-  <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 3, borderColor: 'transparent', borderTopColor: color }} />
-)
+import Spinner from '../components/Spinner'
 
 export default function AppNavigator() {
   const session = useAuthStore((s) => s.session)

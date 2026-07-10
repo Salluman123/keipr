@@ -16,10 +16,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { AuthStackParamList } from '../../navigation/AuthStack'
 import { Colors } from '../../constants/colors'
 import { useAuthStore } from '../../store/authStore'
-
-const Spinner = ({ size = 20, color = '#FFFFFF' }) => (
-  <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 3, borderColor: 'transparent', borderTopColor: color }} />
-)
+import Spinner from '../../components/Spinner'
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'ForgotPassword'>

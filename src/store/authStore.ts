@@ -1,14 +1,65 @@
 import { create } from 'zustand'
+import * as AppleAuthentication from 'expo-apple-authentication'
+import Purchases from 'react-native-purchases'
 import { supabase } from '../lib/supabase'
+import { usePurchaseStore } from './purchaseStore'
+import { useExpenseStore } from './expenseStore'
 import type { AuthStore, AccountType } from '../types'
 
+async function rcLogIn(userId: string) {
+  const ts = new Date().toISOString()
+  try {
+    const { customerInfo, created } = await Purchases.logIn(userId)
+    const rcUserId = customerInfo.originalAppUserId
+    console.log('[Keipr] RC logIn — userId:', userId, '| RC userId:', rcUserId, '| new:', created)
+    console.log('[Keipr] RC logIn — entitlements.active:', JSON.stringify(customerInfo.entitlements.active))
+    usePurchaseStore.setState({
+      rcDiag: { supabaseId: userId, rcUserId, isAnonymous: rcUserId.startsWith('$RCAnonymousID'), logInError: null, ts },
+    })
+  } catch (e) {
+    const msg = String(e)
+    console.log('[Keipr] RC logIn failed:', msg)
+    usePurchaseStore.setState({
+      rcDiag: { supabaseId: userId, rcUserId: null, isAnonymous: null, logInError: msg, ts },
+    })
+  }
+}
+
+async function rcLogOut() {
+  try {
+    await Purchases.logOut()
+    console.log('[Keipr] RC logOut — reverted to anonymous identity')
+  } catch (e) {
+    console.log('[Keipr] RC logOut failed:', String(e))
+  }
+}
+
 export const useAuthStore = create<AuthStore>((set) => {
-  supabase.auth.onAuthStateChange((_event, session) => {
+  // SIGNED_IN fires on fresh logins (email/password, Apple, token refresh after restore).
+  // INITIAL_SESSION fires at import time — before Purchases.configure() has run — so we
+  // intentionally skip it here and handle session restore in initialize() instead.
+  supabase.auth.onAuthStateChange((event, session) => {
     set({
       session,
       user: session?.user ?? null,
       loading: false,
     })
+    if (event === 'SIGNED_IN' && session?.user?.id) {
+      rcLogIn(session.user.id)
+    }
+    if (event === 'SIGNED_OUT') {
+      rcLogOut()
+      // Clear per-user state so the next account never sees this account's data.
+      usePurchaseStore.setState({ isPro: false })
+      useExpenseStore.setState({
+        expenses: [],
+        totalIncome: 0,
+        totalExpenses: 0,
+        monthChangePercent: null,
+        lastFetchParams: null,
+        fetchError: false,
+      })
+    }
   })
 
   return {
@@ -20,6 +71,12 @@ export const useAuthStore = create<AuthStore>((set) => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         set({ session, user: session?.user ?? null, loading: false })
+        // Identify the user with RevenueCat before any entitlement check runs.
+        // RC automatically aliases any anonymous purchases made on this device to
+        // the identified user when logIn() is called for the first time.
+        if (session?.user?.id) {
+          await rcLogIn(session.user.id)
+        }
       } catch {
         set({ loading: false })
       }
@@ -28,10 +85,11 @@ export const useAuthStore = create<AuthStore>((set) => {
     signIn: async (email: string, password: string) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
+      // onAuthStateChange SIGNED_IN will call rcLogIn automatically.
     },
 
     signUp: async (email: string, password: string, fullName: string, accountType: AccountType) => {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -39,11 +97,17 @@ export const useAuthStore = create<AuthStore>((set) => {
         },
       })
       if (error) throw error
+      // With "Confirm email" enabled in Supabase, signUp succeeds but returns no
+      // session — the user must click the emailed link before they can sign in.
+      // Report that so the screen can show a "check your email" state instead of
+      // silently doing nothing.
+      return !data.session
     },
 
     signOut: async () => {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      // onAuthStateChange SIGNED_OUT will call rcLogOut automatically.
     },
 
     resetPassword: async (email: string) => {
@@ -51,6 +115,22 @@ export const useAuthStore = create<AuthStore>((set) => {
         redirectTo: 'keipr://reset-password',
       })
       if (error) throw error
+    },
+
+    signInWithApple: async () => {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      })
+      if (!credential.identityToken) throw new Error('Apple sign in failed: no identity token returned.')
+      const { error } = await supabase.auth.signInWithIdToken({
+        provider: 'apple',
+        token: credential.identityToken,
+      })
+      if (error) throw error
+      // onAuthStateChange SIGNED_IN will call rcLogIn automatically.
     },
   }
 })

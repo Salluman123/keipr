@@ -39,16 +39,40 @@ Deno.serve(async (req) => {
   )
 
   if (
-    typeof userId !== 'string' ||
     typeof eventId !== 'string' ||
     typeof eventType !== 'string' ||
     typeof eventTimestampMs !== 'number'
   ) {
+    // Structurally malformed — real RevenueCat events always carry these.
     return json(400, { error: 'Invalid RevenueCat event' })
+  }
+
+  if (eventType === 'TEST') {
+    console.log('RevenueCat TEST event received — acknowledged, nothing to process')
+    return json(200, { received: true, ignored: 'test_event' })
+  }
+
+  if (typeof userId !== 'string') {
+    // Every candidate ID was anonymous ($RCAnonymousID:…) or absent (e.g. TRANSFER
+    // events have no app_user_id). There is no Supabase user to attribute this to,
+    // and retrying can never change that — ack with 200 so RevenueCat stops
+    // retrying, but log loudly since an anonymous *purchase* event means the app
+    // failed to identify the user before buying.
+    console.error(
+      'RevenueCat event has no UUID user id — type:', eventType,
+      '| app_user_id:', String(event?.app_user_id ?? null),
+      '| aliases:', JSON.stringify(event?.aliases ?? null),
+    )
+    return json(200, { received: true, ignored: 'no_identified_user' })
   }
 
   const entitlementIds = Array.isArray(event.entitlement_ids) ? event.entitlement_ids : []
   if (!entitlementIds.includes(entitlementId)) {
+    console.log(
+      'RevenueCat event ignored — entitlement_ids', JSON.stringify(entitlementIds),
+      'does not include expected', JSON.stringify(entitlementId),
+      '| type:', eventType, '| user:', userId,
+    )
     return json(200, { received: true, ignored: 'unrelated_entitlement' })
   }
 

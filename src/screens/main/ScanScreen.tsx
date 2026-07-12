@@ -594,6 +594,7 @@ const styles = StyleSheet.create({
   notesInput: {
     alignItems: 'flex-start', paddingTop: 12,
     minHeight: 80, textAlignVertical: 'top',
+    fontSize: 16, color: Colors.offWhite,
   },
   catChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

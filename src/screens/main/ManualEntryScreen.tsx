@@ -354,6 +354,7 @@ const styles = StyleSheet.create({
 
   notesBox: {
     alignItems: 'flex-start', paddingTop: 12, minHeight: 90,
+    fontSize: 16, color: Colors.offWhite,
   },
 
   categoryGrid: {

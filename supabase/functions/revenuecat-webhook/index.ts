@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { normalizeEntitlementId } from '../_shared/entitlement.ts'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -66,8 +67,14 @@ Deno.serve(async (req) => {
     return json(200, { received: true, ignored: 'no_identified_user' })
   }
 
+  // Compare with Unicode normalization: the live entitlement ID contains
+  // U+2024 (ONE DOT LEADER) where our config uses an ASCII period.
+  const expectedEntitlement = normalizeEntitlementId(entitlementId)
   const entitlementIds = Array.isArray(event.entitlement_ids) ? event.entitlement_ids : []
-  if (!entitlementIds.includes(entitlementId)) {
+  const matchesEntitlement = entitlementIds.some(
+    (id: unknown) => typeof id === 'string' && normalizeEntitlementId(id) === expectedEntitlement,
+  )
+  if (!matchesEntitlement) {
     console.log(
       'RevenueCat event ignored — entitlement_ids', JSON.stringify(entitlementIds),
       'does not include expected', JSON.stringify(entitlementId),

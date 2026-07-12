@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import Purchases, { PurchasesPackage } from 'react-native-purchases'
 import { supabase } from '../lib/supabase'
+import { hasProEntitlement } from '../lib/entitlements'
 
 // Push the entitlement to the server right away so scan/expense gates unlock
 // without waiting for the RevenueCat webhook. Fire-and-forget: the scan-receipt
@@ -36,7 +37,7 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
       const info = await Purchases.getCustomerInfo()
       const active = info.entitlements.active
       console.log('[Keipr] checkSubscription — entitlements.active:', JSON.stringify(active))
-      const isPro = 'get.keipr Pro' in active
+      const isPro = hasProEntitlement(active)
       console.log('[Keipr] checkSubscription — isPro:', isPro)
       set({ isPro })
     } catch (e) {
@@ -50,7 +51,7 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
       const { customerInfo } = await Purchases.purchasePackage(pkg)
       const active = customerInfo.entitlements.active
       console.log('[Keipr] purchasePackage — entitlements.active:', JSON.stringify(active))
-      const isPro = 'get.keipr Pro' in active
+      const isPro = hasProEntitlement(active)
       console.log('[Keipr] purchasePackage — isPro:', isPro)
       set({ isPro })
       if (isPro) syncServerEntitlement()
@@ -70,7 +71,7 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
       const active = info.entitlements.active
       console.log('[Keipr] restorePurchases — entitlement keys:', Object.keys(active))
       console.log('[Keipr] restorePurchases — full active:', JSON.stringify(active))
-      const isPro = 'get.keipr Pro' in active
+      const isPro = hasProEntitlement(active)
       console.log('[Keipr] restorePurchases — isPro:', isPro)
       set({ isPro })
       if (isPro) syncServerEntitlement()

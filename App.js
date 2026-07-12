@@ -7,6 +7,7 @@ import { useAuthStore } from './src/store/authStore'
 import { usePurchaseStore } from './src/store/purchaseStore'
 import { useExpenseStore } from './src/store/expenseStore'
 import { getCurrencyRate, refreshExchangeRates } from './src/lib/currency'
+import { hasProEntitlement } from './src/lib/entitlements'
 
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize)
@@ -19,7 +20,7 @@ export default function App() {
         // Real-time entitlement updates — covers delayed sandbox activations and
         // any server-side subscription changes without requiring an app restart.
         Purchases.addCustomerInfoUpdateListener((info) => {
-          usePurchaseStore.setState({ isPro: 'get.keipr Pro' in info.entitlements.active })
+          usePurchaseStore.setState({ isPro: hasProEntitlement(info.entitlements.active) })
         })
       } catch {}
       try { await initialize() } catch {}

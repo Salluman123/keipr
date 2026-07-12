@@ -1,5 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+// The RevenueCat entitlement identifier was created with U+2024 (ONE DOT
+// LEADER), not an ASCII period: "get․keipr Pro". It cannot be renamed without
+// orphaning existing purchases, so every comparison must normalize both sides.
+// NFKC folds U+2024 (and other compatibility dots) to ".".
+export const normalizeEntitlementId = (s: string) => s.normalize('NFKC')
+
 // Queries the RevenueCat REST API for the user's current entitlement and, if
 // active, upserts public.user_entitlements directly. This is the self-healing
 // fallback for when the RevenueCat webhook hasn't landed yet (purchase→webhook
@@ -44,7 +50,11 @@ export async function syncEntitlementFromRevenueCat(userId: string): Promise<boo
 
   const subscriber = payload?.subscriber as Record<string, unknown> | undefined
   const entitlements = subscriber?.entitlements as Record<string, unknown> | undefined
-  const entitlement = entitlements?.[entitlementId] as Record<string, unknown> | undefined
+  const expected = normalizeEntitlementId(entitlementId)
+  const entitlementEntry = Object.entries(entitlements ?? {}).find(
+    ([key]) => normalizeEntitlementId(key) === expected,
+  )
+  const entitlement = entitlementEntry?.[1] as Record<string, unknown> | undefined
   if (!entitlement) return false
 
   const expiresIso = typeof entitlement.expires_date === 'string' ? entitlement.expires_date : null

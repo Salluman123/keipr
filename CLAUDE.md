@@ -37,12 +37,19 @@ Handle: @getkeipr | Domain: getkeipr.com
 2. NEVER update local state directly after insert — always refetch from Supabase
 3. NEVER use ActivityIndicator without explicit numeric size prop
 4. ALWAYS use expo-file-system/legacy not expo-file-system for readAsStringAsync
-5. ALWAYS include this header in Claude API calls:
-   "anthropic-dangerous-direct-browser-access": "true"
+5. NEVER call api.anthropic.com directly from the client, and NEVER bundle an
+   Anthropic API key in the app (no EXPO_PUBLIC_ANTHROPIC_API_KEY). Receipt
+   OCR goes through the `scan-receipt` Supabase Edge Function, which holds
+   ANTHROPIC_API_KEY as a server-side secret. See src/lib/claudeOCR.ts and
+   supabase/functions/scan-receipt/index.ts.
 6. NEVER insert columns into Supabase that don't exist in the schema
 7. NEVER use fontSize: "large" or any string value for numeric style props
 
 ## Environment Variables
 EXPO_PUBLIC_SUPABASE_URL
 EXPO_PUBLIC_SUPABASE_ANON_KEY
-EXPO_PUBLIC_ANTHROPIC_API_KEY
+EXPO_PUBLIC_RC_API_KEY
+
+Server-side only (Supabase secrets, never bundled in the client):
+ANTHROPIC_API_KEY, REVENUECAT_SECRET_API_KEY, REVENUECAT_WEBHOOK_SECRET,
+REVENUECAT_ENTITLEMENT_ID

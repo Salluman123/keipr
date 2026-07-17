@@ -79,14 +79,15 @@ WHERE trigger_name = 'on_auth_user_created';
 ```
 
 ## Claude API
-- Endpoint: https://api.anthropic.com/v1/messages
-- Model: claude-sonnet-4-5
-- Required headers:
-  - x-api-key: EXPO_PUBLIC_ANTHROPIC_API_KEY
-  - anthropic-version: 2023-06-01
-  - anthropic-dangerous-direct-browser-access: true
-- System prompt: Extract receipt data and return JSON only:
-  { vendor, amount, date (YYYY-MM-DD), category }
+The client NEVER calls api.anthropic.com and NEVER holds an Anthropic key.
+The app calls the `scan-receipt` Supabase Edge Function
+(supabase/functions/scan-receipt/index.ts), which:
+- requires a valid Supabase user JWT (verify_jwt: true + auth.getUser check)
+- enforces the scan quota server-side via consume_scan_quota() before calling Anthropic
+- holds ANTHROPIC_API_KEY as a Supabase secret and calls
+  https://api.anthropic.com/v1/messages (model: claude-sonnet-4-5) itself
+- returns only the sanitized extracted fields to the client:
+  { vendor, amount, date (YYYY-MM-DD), category, currency }
 
 ## Categories
 Food & Drink | Software | Travel | Office | Shopping | Healthcare | Entertainment | Utilities | General

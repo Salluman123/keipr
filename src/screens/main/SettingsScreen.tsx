@@ -187,7 +187,8 @@ export default function SettingsScreen() {
           onPress: async () => {
             setDeletingAccount(true)
             try {
-              await removeAllReceipts(userId)
+              // delete_account removes storage receipts itself (inside the RPC)
+              // so deletion is atomic even if the app is killed mid-flow.
               const { error } = await supabase.rpc('delete_account')
               if (error) throw error
               await signOut()

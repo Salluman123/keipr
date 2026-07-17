@@ -13,6 +13,9 @@ export const normalizeEntitlementId = (s: string) => s.normalize('NFKC')
 // later aliased). It only ever UNLOCKS — an inactive/missing entitlement is
 // reported as false without writing anything, so a misconfigured REST key can
 // never downgrade a user the webhook has already marked Pro.
+const SYNC_COOLDOWN_MS = 60_000
+
+
 export async function syncEntitlementFromRevenueCat(userId: string): Promise<boolean> {
   const rcKey = Deno.env.get('REVENUECAT_SECRET_API_KEY')
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
@@ -22,6 +25,31 @@ export async function syncEntitlementFromRevenueCat(userId: string): Promise<boo
     console.error('Entitlement sync skipped — missing REVENUECAT_SECRET_API_KEY or Supabase env')
     return false
   }
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+
+  // Per-user cooldown so repeated failed scans (or restore taps) can't spam
+  // RevenueCat's REST API. A free user hammering the scan button would
+  // otherwise trigger one RC call per attempt with no upper bound.
+  const { data: lastAttempt } = await admin
+    .from('entitlement_sync_attempts')
+    .select('last_attempt_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (
+    lastAttempt?.last_attempt_at &&
+    Date.now() - Date.parse(lastAttempt.last_attempt_at) < SYNC_COOLDOWN_MS
+  ) {
+    console.log('Entitlement sync skipped — cooldown active for user', userId)
+    return false
+  }
+
+  await admin
+    .from('entitlement_sync_attempts')
+    .upsert({ user_id: userId, last_attempt_at: new Date().toISOString() })
 
   let res: Response
   try {
@@ -60,10 +88,6 @@ export async function syncEntitlementFromRevenueCat(userId: string): Promise<boo
   const expiresIso = typeof entitlement.expires_date === 'string' ? entitlement.expires_date : null
   const active = expiresIso === null || Date.parse(expiresIso) > Date.now()
   if (!active) return false
-
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
 
   const nowMs = Date.now()
   const { error } = await admin.from('user_entitlements').upsert({

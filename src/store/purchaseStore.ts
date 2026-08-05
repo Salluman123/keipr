@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import Purchases, { PurchasesPackage } from 'react-native-purchases'
+import type { PurchasesPackage } from 'react-native-purchases'
 import { supabase } from '../lib/supabase'
 import { hasProEntitlement } from '../lib/entitlements'
 
@@ -8,6 +8,26 @@ import { hasProEntitlement } from '../lib/entitlements'
 // function also self-heals, so a failure here is not fatal.
 function syncServerEntitlement() {
   supabase.functions.invoke('sync-entitlement').catch(() => {})
+}
+
+type PurchasesModule = typeof import('react-native-purchases')['default']
+
+let cachedPurchases: PurchasesModule | null = null
+
+// react-native-purchases is a native module like expo-notifications and
+// expo-local-authentication — deferring the require here keeps any
+// import-time resolution failure inside a guard instead of ahead of one, and
+// lets a later call retry if the native module wasn't registered yet at
+// startup. Only the success is cached — a failure isn't, so the next call
+// gets another chance.
+function getPurchases(): PurchasesModule | null {
+  if (cachedPurchases) return cachedPurchases
+  try {
+    cachedPurchases = require('react-native-purchases').default as PurchasesModule
+    return cachedPurchases
+  } catch {
+    return null
+  }
 }
 
 export interface RcDiag {
@@ -33,6 +53,11 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
   rcDiag: { supabaseId: null, rcUserId: null, isAnonymous: null, logInError: null, ts: null },
 
   checkSubscription: async () => {
+    const Purchases = getPurchases()
+    if (!Purchases) {
+      console.log('[Keipr] checkSubscription — react-native-purchases unavailable')
+      return
+    }
     try {
       const info = await Purchases.getCustomerInfo()
       const active = info.entitlements.active
@@ -46,6 +71,8 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
   },
 
   purchasePackage: async (pkg: PurchasesPackage): Promise<boolean> => {
+    const Purchases = getPurchases()
+    if (!Purchases) throw new Error('Purchases are not available on this device.')
     set({ loading: true })
     try {
       const { customerInfo } = await Purchases.purchasePackage(pkg)
@@ -65,6 +92,8 @@ export const usePurchaseStore = create<PurchaseStore>((set) => ({
   },
 
   restorePurchases: async () => {
+    const Purchases = getPurchases()
+    if (!Purchases) throw new Error('Purchases are not available on this device.')
     set({ loading: true })
     try {
       const info = await Purchases.restorePurchases()

@@ -1,13 +1,37 @@
 import { create } from 'zustand'
 import * as AppleAuthentication from 'expo-apple-authentication'
-import Purchases from 'react-native-purchases'
 import { supabase } from '../lib/supabase'
 import { usePurchaseStore } from './purchaseStore'
 import { useExpenseStore } from './expenseStore'
 import type { AuthStore, AccountType } from '../types'
 
+type PurchasesModule = typeof import('react-native-purchases')['default']
+
+let cachedPurchases: PurchasesModule | null = null
+
+// react-native-purchases resolves its native module at import time — deferring
+// the require here keeps that resolution attempt inside a guard instead of
+// ahead of one, same pattern as purchaseStore.ts/App.js. Only the success is
+// cached — a failure isn't, so the next call gets another chance.
+function getPurchases(): PurchasesModule | null {
+  if (cachedPurchases) return cachedPurchases
+  try {
+    cachedPurchases = require('react-native-purchases').default as PurchasesModule
+    return cachedPurchases
+  } catch {
+    return null
+  }
+}
+
 async function rcLogIn(userId: string) {
   const ts = new Date().toISOString()
+  const Purchases = getPurchases()
+  if (!Purchases) {
+    usePurchaseStore.setState({
+      rcDiag: { supabaseId: userId, rcUserId: null, isAnonymous: null, logInError: 'react-native-purchases unavailable', ts },
+    })
+    return
+  }
   try {
     const { customerInfo, created } = await Purchases.logIn(userId)
     const rcUserId = customerInfo.originalAppUserId
@@ -26,6 +50,8 @@ async function rcLogIn(userId: string) {
 }
 
 async function rcLogOut() {
+  const Purchases = getPurchases()
+  if (!Purchases) return
   try {
     await Purchases.logOut()
     console.log('[Keipr] RC logOut — reverted to anonymous identity')

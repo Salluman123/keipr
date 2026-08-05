@@ -6,10 +6,28 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native'
-import Purchases, { PurchasesPackage } from 'react-native-purchases'
+import type { PurchasesPackage } from 'react-native-purchases'
 import { Colors } from '../constants/colors'
 import { usePurchaseStore } from '../store/purchaseStore'
 import KeiprIcon from '../components/KeiprIcon'
+
+type PurchasesModule = typeof import('react-native-purchases')['default']
+
+let cachedPurchases: PurchasesModule | null = null
+
+// react-native-purchases resolves its native module at import time — deferring
+// the require here keeps that resolution attempt inside a guard instead of
+// ahead of one, same pattern as purchaseStore.ts/App.js. Only the success is
+// cached — a failure isn't, so the next call gets another chance.
+function getPurchases(): PurchasesModule | null {
+  if (cachedPurchases) return cachedPurchases
+  try {
+    cachedPurchases = require('react-native-purchases').default as PurchasesModule
+    return cachedPurchases
+  } catch {
+    return null
+  }
+}
 
 const FEATURES = [
   { icon: '♾️', text: 'Unlimited expenses per month' },
@@ -31,6 +49,11 @@ export default function PaywallScreen() {
   const dismissedRef = useRef(false)
 
   const loadOfferings = () => {
+    const Purchases = getPurchases()
+    if (!Purchases) {
+      setOfferingsStatus('error')
+      return
+    }
     setOfferingsStatus('loading')
     Purchases.getOfferings()
       .then(o => {

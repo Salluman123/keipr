@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { AppState } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
-import Purchases from 'react-native-purchases'
 import * as QuickActions from 'expo-quick-actions'
 import AppNavigator from './src/navigation/AppNavigator'
 import { useAuthStore } from './src/store/authStore'
@@ -42,6 +41,11 @@ export default function App() {
   useEffect(() => {
     const boot = async () => {
       try {
+        // react-native-purchases resolves its native module at import time —
+        // deferring the require to here (like expo-notifications and
+        // expo-local-authentication) keeps that resolution attempt inside
+        // this guard instead of ahead of it.
+        const Purchases = require('react-native-purchases').default
         Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_RC_API_KEY })
         // Real-time entitlement updates — covers delayed sandbox activations and
         // any server-side subscription changes without requiring an app restart.

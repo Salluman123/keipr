@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from '@react-navigation/native'
 import { Colors } from '../../constants/colors'
-import { EXPENSE_CATEGORIES } from '../../constants/categories'
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../constants/categories'
 import { useExpenseStore } from '../../store/expenseStore'
 import { getCurrencySymbol, toDisplayAmount } from '../../lib/currency'
 import { useAuthStore } from '../../store/authStore'
@@ -15,10 +15,11 @@ import type { Expense } from '../../types'
 import type { CategoryId } from '../../constants/categories'
 import { getTodayMidnight, parseLocalDate } from '../../lib/date'
 
-type FilterId = 'all' | CategoryId
+type FilterId = 'all' | 'income' | CategoryId
 
 const FILTERS: Array<{ id: FilterId; label: string }> = [
   { id: 'all', label: 'All' },
+  { id: 'income', label: 'Income' },
   ...EXPENSE_CATEGORIES.map(c => ({
     id: c.id as FilterId,
     label: c.label.split('&')[0].trim().split(' ').slice(0, 2).join(' '),
@@ -127,14 +128,28 @@ export default function ExpensesScreen() {
   const [refreshing, setRefreshing] = useState(false)
 
   const filtered = useMemo(() => expenses.filter(e => {
-    const matchCat = filter === 'all' || e.category === filter
+    const matchType =
+      filter === 'all' ? true
+      : filter === 'income' ? e.type === 'income'
+      : e.type === 'expense' && e.category === filter
     const matchSearch = !search || e.vendor.toLowerCase().includes(search.toLowerCase())
-    return matchCat && matchSearch
+    return matchType && matchSearch
   }), [expenses, filter, search])
 
+  // Total In / Out always reflect the full month (narrowed only by search),
+  // independent of which list filter chip is active.
   const totalOut = useMemo(
-    () => filtered.reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0),
-    [filtered, currencyRate]
+    () => expenses
+      .filter(e => e.type === 'expense' && (!search || e.vendor.toLowerCase().includes(search.toLowerCase())))
+      .reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0),
+    [expenses, search, currencyRate]
+  )
+
+  const totalIn = useMemo(
+    () => expenses
+      .filter(e => e.type === 'income' && (!search || e.vendor.toLowerCase().includes(search.toLowerCase())))
+      .reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0),
+    [expenses, search, currencyRate]
   )
 
   const { groupOrder, groupMap } = useMemo(() => {
@@ -162,7 +177,7 @@ export default function ExpensesScreen() {
 
   const confirmDelete = (expense: Expense) => {
     Alert.alert(
-      'Delete Expense',
+      expense.type === 'income' ? 'Delete Income' : 'Delete Expense',
       `Delete "${expense.vendor}" for ${sym}${toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -170,7 +185,7 @@ export default function ExpensesScreen() {
           text: 'Delete', style: 'destructive',
           onPress: async () => {
             try { await deleteExpense(expense.id) }
-            catch { Alert.alert('Error', 'Could not delete expense.') }
+            catch { Alert.alert('Error', 'Could not delete this entry.') }
           },
         },
       ]
@@ -180,7 +195,7 @@ export default function ExpensesScreen() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.screenHeader}>
-        <Text style={s.screenTitle}>Expenses</Text>
+        <Text style={s.screenTitle}>Transactions</Text>
         <Text style={s.screenCount}>
           {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
         </Text>
@@ -206,7 +221,7 @@ export default function ExpensesScreen() {
             style={s.searchInput}
             value={search}
             onChangeText={setSearch}
-            placeholder="Search expenses..."
+            placeholder="Search transactions..."
             placeholderTextColor={Colors.gray}
             returnKeyType="search"
           />
@@ -236,7 +251,7 @@ export default function ExpensesScreen() {
           <View style={[s.pill, { borderColor: Colors.success + '55' }]}>
             <Ionicons name="arrow-down-outline" size={13} color={Colors.success} />
             <Text style={[s.pillLabel, { color: Colors.success }]}>Total In</Text>
-            <Text style={[s.pillAmt, { color: Colors.success }]}>{sym}0.00</Text>
+            <Text style={[s.pillAmt, { color: Colors.success }]}>{sym}{totalIn.toFixed(2)}</Text>
           </View>
           <View style={[s.pill, { borderColor: Colors.error + '55' }]}>
             <Ionicons name="arrow-up-outline" size={13} color={Colors.error} />
@@ -253,14 +268,14 @@ export default function ExpensesScreen() {
         ) : fetchError && expenses.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyIcon}>📡</Text>
-            <Text style={s.emptyTitle}>Couldn't load expenses</Text>
+            <Text style={s.emptyTitle}>Couldn't load transactions</Text>
             <Text style={s.emptySubtext}>Check your connection, then pull down to try again</Text>
           </View>
         ) : groupOrder.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyIcon}>📭</Text>
             <Text style={s.emptyTitle}>
-              {search || filter !== 'all' ? 'No matching expenses' : 'No expenses this month'}
+              {search || filter !== 'all' ? 'No matching transactions' : 'No transactions this month'}
             </Text>
             <Text style={s.emptySubtext}>
               {!search && filter === 'all'
@@ -273,7 +288,8 @@ export default function ExpensesScreen() {
             <View key={title}>
               <Text style={s.sectionHeader}>{title}</Text>
               {groupMap[title].map(expense => {
-                const cat = EXPENSE_CATEGORIES.find(c => c.id === expense.category)
+                const isIncome = expense.type === 'income'
+                const cat = (isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(c => c.id === expense.category)
                 const dateStr = parseLocalDate(expense.date)
                   .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                 return (
@@ -290,7 +306,9 @@ export default function ExpensesScreen() {
                         <Text style={s.vendor} numberOfLines={1}>{expense.vendor}</Text>
                         <Text style={s.rowMeta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
                       </View>
-                      <Text style={s.amount}>-{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}</Text>
+                      <Text style={[s.amount, isIncome && { color: Colors.success }]}>
+                        {isIncome ? '+' : '-'}{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}
+                      </Text>
                     </TouchableOpacity>
                   </SwipeableRow>
                 )

@@ -29,10 +29,9 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { Colors } from '../../constants/colors'
 import KeiprIcon from '../../components/KeiprIcon'
-import { EXPENSE_CATEGORIES } from '../../constants/categories'
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
-import { usePurchaseStore } from '../../store/purchaseStore'
 import type { Expense } from '../../types'
 import type { MainTabParamList } from '../../navigation/MainTabs'
 import type { MainStackParamList } from '../../navigation/MainStack'
@@ -57,6 +56,7 @@ function SpendingChart({ expenses, month, year }: { expenses: Expense[]; month: 
 
   const dailyTotals = Array<number>(daysInMonth).fill(0)
   expenses
+    .filter(e => e.type === 'expense')
     .forEach(e => {
       const [, , day] = e.date.split('-').map(Number)
       const d = day - 1
@@ -122,7 +122,8 @@ function SpendingChart({ expenses, month, year }: { expenses: Expense[]; month: 
 // ─── Expense row ─────────────────────────────────────────────────────────────
 
 function ExpenseRow({ expense, sym, currencyRate }: { expense: Expense; sym: string; currencyRate: number }) {
-  const cat = EXPENSE_CATEGORIES.find(c => c.id === expense.category)
+  const isIncome = expense.type === 'income'
+  const cat = (isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(c => c.id === expense.category)
   const dateStr = parseLocalDate(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
@@ -134,8 +135,8 @@ function ExpenseRow({ expense, sym, currencyRate }: { expense: Expense; sym: str
         <Text style={rowStyles.title} numberOfLines={1}>{expense.vendor}</Text>
         <Text style={rowStyles.meta}>{cat?.label ?? 'Other'} · {dateStr}</Text>
       </View>
-      <Text style={rowStyles.amount}>
-        -{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}
+      <Text style={[rowStyles.amount, isIncome && { color: Colors.success }]}>
+        {isIncome ? '+' : '-'}{sym}{toDisplayAmount(expense.amount, expense.currency || 'USD', currencyRate).toFixed(2)}
       </Text>
     </View>
   )
@@ -182,7 +183,6 @@ export default function HomeScreen() {
     fetchExpenses,
     setSelectedPeriod,
   } = useExpenseStore()
-  const { isPro } = usePurchaseStore()
 
   const [refreshing, setRefreshing] = useState(false)
   const monthScrollRef = useRef<ScrollView>(null)
@@ -191,7 +191,8 @@ export default function HomeScreen() {
   const userName: string = user?.user_metadata?.full_name ?? user?.email ?? 'there'
   const userInitial = userName.charAt(0).toUpperCase()
   const sym = getCurrencySymbol(currency)
-  const netBalance = -totalExpenses
+  const netBalance = totalIncome - totalExpenses
+  const expenseCount = expenses.filter(e => e.type === 'expense').length
 
   // Initial fetch
   useEffect(() => {
@@ -291,7 +292,7 @@ export default function HomeScreen() {
             <View style={styles.balanceDivider} />
             <View style={styles.balanceStat}>
               <Text style={styles.balanceStatLabel}>Receipts</Text>
-              <Text style={styles.balanceStatValue}>{expenses.length}</Text>
+              <Text style={styles.balanceStatValue}>{expenseCount}</Text>
             </View>
           </View>
         </LinearGradient>
@@ -336,7 +337,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.quickPrimaryWrapper}
             activeOpacity={0.85}
-            onPress={() => isPro ? navigation.navigate('ScanReceipt') : navigation.navigate('Paywall')}
+            onPress={() => navigation.navigate('ScanReceipt')}
           >
             <LinearGradient
               colors={[Colors.purpleLight, Colors.purpleDark]}

@@ -179,6 +179,7 @@ export default function ReportsScreen() {
             .from('expenses')
             .select('amount,currency')
             .eq('user_id', userId)
+            .eq('type', 'expense')
             .gte('date', `${year}-${mm}-01`)
             .lte('date', `${year}-${mm}-${String(lastDay).padStart(2, '0')}`)
           if (error) throw error
@@ -231,9 +232,15 @@ export default function ReportsScreen() {
     return expenses // monthly
   }, [period, expenses, yearlyExpenses])
 
-  const totalExpenses = periodExpenses.reduce(
-    (sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0
-  )
+  const totalExpenses = periodExpenses
+    .filter(e => e.type === 'expense')
+    .reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0)
+
+  const totalRevenue = periodExpenses
+    .filter(e => e.type === 'income')
+    .reduce((sum, e) => sum + toDisplayAmount(e.amount, e.currency || 'USD', currencyRate), 0)
+
+  const net = totalRevenue - totalExpenses
 
   // Category breakdown for donut
   const categoryData = useMemo(() => {
@@ -316,7 +323,7 @@ export default function ReportsScreen() {
           <View style={r.summaryRow}>
             <View style={r.summaryCol}>
               <Text style={r.summaryColLabel}>Revenue</Text>
-              <Text style={[r.summaryColValue, { color: Colors.success }]}>{sym}0.00</Text>
+              <Text style={[r.summaryColValue, { color: Colors.success }]}>{sym}{totalRevenue.toFixed(2)}</Text>
             </View>
             <View style={r.summaryDivider} />
             <View style={r.summaryCol}>
@@ -328,8 +335,8 @@ export default function ReportsScreen() {
             <View style={r.summaryDivider} />
             <View style={r.summaryCol}>
               <Text style={r.summaryColLabel}>Net</Text>
-              <Text style={[r.summaryColValue, { color: Colors.purpleLight }]}>
-                -{sym}{totalExpenses.toFixed(2)}
+              <Text style={[r.summaryColValue, { color: net < 0 ? Colors.error : Colors.success }]}>
+                {net < 0 ? '-' : ''}{sym}{Math.abs(net).toFixed(2)}
               </Text>
             </View>
           </View>

@@ -23,7 +23,7 @@ type TabName = keyof MainTabParamList
 
 const TAB_CONFIG: Record<TabName, { label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }> = {
   Home:     { label: 'Home',     icon: 'home-outline',       iconActive: 'home' },
-  Expenses: { label: 'Expenses', icon: 'receipt-outline',    iconActive: 'receipt' },
+  Expenses: { label: 'Transactions', icon: 'receipt-outline',    iconActive: 'receipt' },
   Reports:  { label: 'Reports',  icon: 'stats-chart-outline', iconActive: 'stats-chart' },
   Settings: { label: 'Settings', icon: 'settings-outline',   iconActive: 'settings' },
 }

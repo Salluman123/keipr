@@ -18,8 +18,9 @@ import * as ImagePicker from 'expo-image-picker'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { Colors } from '../../constants/colors'
-import { EXPENSE_CATEGORIES } from '../../constants/categories'
-import type { CategoryId } from '../../constants/categories'
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../constants/categories'
+import type { AnyCategoryId } from '../../constants/categories'
+import type { TransactionType } from '../../types'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
@@ -29,6 +30,7 @@ import { removeReceipt, uploadReceiptImage } from '../../lib/receiptStorage'
 import { getLocalDateString, getTodayMidnight } from '../../lib/date'
 import DateStepper from '../../components/DateStepper'
 import Spinner from '../../components/Spinner'
+import TypeToggle from '../../components/TypeToggle'
 import type { MainStackParamList } from '../../navigation/MainStack'
 
 type Props = { navigation: NativeStackNavigationProp<MainStackParamList, 'ManualEntry'> }
@@ -79,10 +81,11 @@ export default function ManualEntryScreen({ navigation }: Props) {
 
   const today = getTodayMidnight()
 
+  const [type, setType] = useState<TransactionType>('expense')
   const [vendor, setVendor] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(today)
-  const [category, setCategory] = useState<CategoryId>('other')
+  const [category, setCategory] = useState<AnyCategoryId>('other')
   const [notes, setNotes] = useState('')
   const [receiptUri, setReceiptUri] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -93,6 +96,11 @@ export default function ManualEntryScreen({ navigation }: Props) {
   const [notesFocused, setNotesFocused] = useState(false)
 
   const amountRef = useRef<TextInput>(null)
+
+  const handleTypeChange = (next: TransactionType) => {
+    setType(next)
+    setCategory(next === 'income' ? 'other_income' : 'other')
+  }
 
   const pickReceiptPhoto = async () => {
     Alert.alert('Receipt Photo', 'Choose source', [
@@ -132,7 +140,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
     if (isNaN(parsed) || parsed <= 0) { Alert.alert('Invalid amount', 'Please enter a valid amount greater than 0.'); return }
 
     try {
-      if (await hasReachedExpenseLimit(user.id, isPro)) {
+      if (type === 'expense' && await hasReachedExpenseLimit(user.id, isPro)) {
         Alert.alert(
           'Free Limit Reached',
           `You've used all ${FREE_EXPENSE_LIMIT} free expenses. Upgrade to Pro for unlimited expenses.`,
@@ -159,6 +167,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
         currency,
         date: getLocalDateString(date),
         category,
+        type,
         notes: notes.trim() || undefined,
         receipt_image_url: receiptUrl ?? undefined,
       })
@@ -180,7 +189,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.closeBtn}>
           <Ionicons name="close" size={22} color={Colors.offWhite} />
         </TouchableOpacity>
-        <Text style={styles.heading}>Add Expense</Text>
+        <Text style={styles.heading}>{type === 'income' ? 'Add Income' : 'Add Expense'}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -193,16 +202,21 @@ export default function ManualEntryScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
+          {/* ── Type toggle ── */}
+          <View style={styles.field}>
+            <TypeToggle value={type} onChange={handleTypeChange} />
+          </View>
+
           {/* ── Vendor ── */}
           <View style={styles.field}>
-            <Text style={styles.label}>VENDOR</Text>
+            <Text style={styles.label}>{type === 'income' ? 'SOURCE' : 'VENDOR'}</Text>
             <View style={[styles.inputRow, vendorFocused && styles.inputRowFocused]}>
               <Ionicons name="storefront-outline" size={16} color={vendorFocused ? Colors.purpleLight : Colors.gray} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={vendor}
                 onChangeText={setVendor}
-                placeholder="e.g. Amazon, Starbucks"
+                placeholder={type === 'income' ? 'e.g. Client payment, Salary' : 'e.g. Amazon, Starbucks'}
                 placeholderTextColor={Colors.gray}
                 returnKeyType="next"
                 onSubmitEditing={() => amountRef.current?.focus()}
@@ -242,7 +256,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
           <View style={styles.field}>
             <Text style={styles.label}>CATEGORY</Text>
             <View style={styles.categoryGrid}>
-              {EXPENSE_CATEGORIES.map(cat => {
+              {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => {
                 const active = category === cat.id
                 return (
                   <TouchableOpacity
@@ -310,7 +324,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
               {saving ? (
                 <Spinner size={20} color="#fff" />
               ) : (
-                <Text style={styles.saveBtnText}>Save Expense</Text>
+                <Text style={styles.saveBtnText}>{type === 'income' ? 'Save Income' : 'Save Expense'}</Text>
               )}
             </LinearGradient>
           </TouchableOpacity>

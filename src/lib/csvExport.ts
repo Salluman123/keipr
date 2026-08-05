@@ -3,9 +3,9 @@ import * as Sharing from 'expo-sharing'
 import type { Expense } from '../types'
 
 export async function exportExpensesAsCSV(expenses: Expense[]): Promise<void> {
-  const header = 'Date,Vendor,Category,Amount,Notes'
+  const header = 'Date,Type,Vendor,Category,Amount,Notes'
   const rows = expenses.map(e =>
-    [e.date, e.vendor, e.category, e.amount.toFixed(2), e.notes ?? '']
+    [e.date, e.type === 'income' ? 'Income' : 'Expense', e.vendor, e.category, e.amount.toFixed(2), e.notes ?? '']
       .map(v => `"${String(v).replace(/"/g, '""')}"`)
       .join(',')
   )

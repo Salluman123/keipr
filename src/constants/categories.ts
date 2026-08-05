@@ -14,3 +14,14 @@ export const EXPENSE_CATEGORIES = [
 ] as const
 
 export type CategoryId = typeof EXPENSE_CATEGORIES[number]['id']
+
+export const INCOME_CATEGORIES = [
+  { id: 'salary',         label: 'Salary',          icon: '💰', color: '#10B981' },
+  { id: 'client_payment', label: 'Client Payment',  icon: '🤝', color: '#3B82F6' },
+  { id: 'refund',         label: 'Refund',          icon: '↩️', color: '#F59E0B' },
+  { id: 'investment',     label: 'Investment',      icon: '📈', color: '#8B5CF6' },
+  { id: 'other_income',   label: 'Other Income',    icon: '📋', color: '#6B7280' },
+] as const
+
+export type IncomeCategoryId = typeof INCOME_CATEGORIES[number]['id']
+export type AnyCategoryId = CategoryId | IncomeCategoryId

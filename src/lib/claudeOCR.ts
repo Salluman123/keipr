@@ -1,13 +1,16 @@
 import * as FileSystem from 'expo-file-system/legacy'
 import { supabase } from './supabase'
-import type { CategoryId } from '../constants/categories'
+import type { AnyCategoryId } from '../constants/categories'
+import type { TransactionType } from '../types'
 
 export interface ExtractedReceipt {
+  type: TransactionType | 'unrecognized'
   vendor: string | null
   amount: number | null
   date: string | null        // YYYY-MM-DD
-  category: CategoryId | null
+  category: AnyCategoryId | null
   currency: string | null    // ISO 4217 code e.g. "USD", or null if undetectable
+  needsConfirm: boolean      // true if a critical field couldn't be read, or type is unrecognized
 }
 
 export async function extractFromImage(imageUri: string): Promise<ExtractedReceipt> {

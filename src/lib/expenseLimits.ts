@@ -13,6 +13,7 @@ export async function hasReachedExpenseLimit(userId: string, isPro: boolean): Pr
     .from('expenses')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .eq('type', 'expense')
     .gte('created_at', monthStart.toISOString())
     .lt('created_at', nextMonth.toISOString())
 

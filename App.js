@@ -1,17 +1,37 @@
 import { useEffect } from 'react'
+import { AppState } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import Purchases from 'react-native-purchases'
+import * as Notifications from 'expo-notifications'
+import * as QuickActions from 'expo-quick-actions'
 import AppNavigator from './src/navigation/AppNavigator'
 import { useAuthStore } from './src/store/authStore'
 import { usePurchaseStore } from './src/store/purchaseStore'
 import { useExpenseStore } from './src/store/expenseStore'
+import { useLockStore } from './src/store/lockStore'
 import { getCurrencyRate, refreshExchangeRates } from './src/lib/currency'
 import { hasProEntitlement } from './src/lib/entitlements'
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+})
 
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize)
   const checkSubscription = usePurchaseStore((state) => state.checkSubscription)
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      useLockStore.getState().handleAppStateChange(nextState)
+    })
+    return () => sub.remove()
+  }, [])
 
   useEffect(() => {
     const boot = async () => {
@@ -25,6 +45,11 @@ export default function App() {
       } catch {}
       try { await initialize() } catch {}
       try { await checkSubscription() } catch {}
+      try {
+        await QuickActions.setItems([
+          { id: 'scan-receipt', title: 'Scan Receipt', subtitle: 'Quick Capture', icon: 'capturePhoto' },
+        ])
+      } catch {}
       try {
         await refreshExchangeRates()
         const { currency } = useExpenseStore.getState()

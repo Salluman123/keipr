@@ -25,12 +25,14 @@ import { removeReceipt, uploadReceiptImage } from '../../lib/receiptStorage'
 import { getLocalDateString, getTodayMidnight, parseLocalDate } from '../../lib/date'
 import DateStepper from '../../components/DateStepper'
 import Spinner from '../../components/Spinner'
-import { EXPENSE_CATEGORIES } from '../../constants/categories'
+import TypeToggle from '../../components/TypeToggle'
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '../../constants/categories'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
 import { extractFromImage, type ExtractedReceipt } from '../../lib/claudeOCR'
-import type { CategoryId } from '../../constants/categories'
+import type { AnyCategoryId } from '../../constants/categories'
+import type { TransactionType } from '../../types'
 import type { MainStackParamList } from '../../navigation/MainStack'
 
 type Props = { navigation: NativeStackNavigationProp<MainStackParamList, 'ScanReceipt'> }
@@ -143,15 +145,21 @@ export default function ScanScreen({ navigation }: Props) {
   const [ocrError, setOcrError] = useState('')
 
   // Review form state
+  const [type, setType] = useState<TransactionType>('expense')
   const [expenseCurrency, setExpenseCurrency] = useState(storeCurrency)
   const [vendor, setVendor] = useState('')
   const [amount, setAmount] = useState('')
   const todayLocal = getTodayMidnight()
   const [date, setDate] = useState<Date>(todayLocal)
-  const [category, setCategory] = useState<CategoryId>('other')
+  const [category, setCategory] = useState<AnyCategoryId>('other')
   const [notes, setNotes] = useState('')
   const [vendorFocused, setVendorFocused] = useState(false)
   const [amountFocused, setAmountFocused] = useState(false)
+
+  const handleTypeChange = (next: TransactionType) => {
+    setType(next)
+    setCategory(next === 'income' ? 'other_income' : 'other')
+  }
 
   const processImage = async (uri: string) => {
     setStep('processing')
@@ -159,6 +167,8 @@ export default function ScanScreen({ navigation }: Props) {
     setOcrError('')
     try {
       const data: ExtractedReceipt = await extractFromImage(uri)
+      const detectedType: TransactionType = data.type === 'income' ? 'income' : 'expense'
+      setType(detectedType)
       setVendor(data.vendor ?? '')
       setAmount(data.amount != null ? String(data.amount) : '')
       if (data.date) {
@@ -166,14 +176,77 @@ export default function ScanScreen({ navigation }: Props) {
       } else {
         setDate(getTodayMidnight())
       }
-      if (data.category) setCategory(data.category)
+      if (data.category) {
+        setCategory(data.category)
+      } else {
+        setCategory(detectedType === 'income' ? 'other_income' : 'other')
+      }
       setExpenseCurrency(data.currency ?? storeCurrency)
-      setStep('review')
+
+      if (data.type === 'unrecognized') {
+        setOcrFailed(true)
+        setOcrError("Couldn't tell if this is a receipt or income document — please check the details below.")
+        setStep('review')
+      } else if (!data.needsConfirm) {
+        // Quick Capture: extraction is confident — save immediately instead
+        // of routing through the manual review step.
+        await autoSaveExtracted(data, uri)
+      } else {
+        setStep('review')
+      }
     } catch (e: any) {
       const msg = e?.message ?? 'Unknown error'
       setOcrFailed(true)
       setOcrError(msg)
       setStep('review')
+    }
+  }
+
+  const autoSaveExtracted = async (data: ExtractedReceipt, uri: string) => {
+    if (!user || data.type === 'unrecognized' || data.vendor == null || data.amount == null) {
+      // Shouldn't happen (needsConfirm already guards vendor/amount/type),
+      // but fall back to the pre-filled review screen rather than block silently.
+      setStep('review')
+      return
+    }
+    const detectedType: TransactionType = data.type
+
+    try {
+      if (detectedType === 'expense' && await hasReachedExpenseLimit(user.id, isPro)) {
+        // Don't spring the Paywall prompt during an unattended auto-save — let
+        // the user hit it the normal way if they tap Save from the review screen.
+        setStep('review')
+        return
+      }
+    } catch {
+      setStep('review')
+      return
+    }
+
+    setSaving(true)
+    let receiptUrl: string | null = null
+    try {
+      receiptUrl = await uploadReceiptImage(uri, user.id)
+      await addExpense({
+        user_id: user.id,
+        vendor: data.vendor,
+        amount: data.amount,
+        currency: data.currency ?? storeCurrency,
+        date: data.date ?? getLocalDateString(getTodayMidnight()),
+        category: data.category ?? (detectedType === 'income' ? 'other_income' : 'other'),
+        type: detectedType,
+        receipt_image_url: receiptUrl ?? undefined,
+      })
+      setShowSuccess(true)
+    } catch (e: any) {
+      // Auto-save failed — fall back to the already-prefilled review screen
+      // instead of losing the scan.
+      await removeReceipt(receiptUrl).catch(() => {})
+      setOcrFailed(true)
+      setOcrError(e?.message ?? 'Could not save automatically. Please review and save.')
+      setStep('review')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -222,7 +295,7 @@ export default function ScanScreen({ navigation }: Props) {
     if (isNaN(parsedAmount) || parsedAmount <= 0) { Alert.alert('Invalid amount', 'Please enter a valid amount.'); return }
 
     try {
-      if (await hasReachedExpenseLimit(user.id, isPro)) {
+      if (type === 'expense' && await hasReachedExpenseLimit(user.id, isPro)) {
         Alert.alert(
           'Free Limit Reached',
           `You've used all ${FREE_EXPENSE_LIMIT} free expenses. Upgrade to Pro for unlimited expenses.`,
@@ -249,6 +322,7 @@ export default function ScanScreen({ navigation }: Props) {
         currency: expenseCurrency,
         date: getLocalDateString(date),
         category,
+        type,
         notes: notes.trim() || undefined,
         receipt_image_url: receiptUrl ?? undefined,
       })
@@ -368,12 +442,15 @@ export default function ScanScreen({ navigation }: Props) {
   if (step === 'processing') {
     return (
       <View style={styles.root}>
+        {showSuccess && <SuccessOverlay onDone={() => navigation.goBack()} />}
         {imageUri && <Image source={{ uri: imageUri }} style={[StyleSheet.absoluteFill, { opacity: 0.35 }]} blurRadius={4} />}
         <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(13,13,20,0.7)' }]} />
         <View style={styles.processingCenter}>
           <SpinningRing />
-          <Text style={styles.processingTitle}>Extracting data…</Text>
-          <Text style={styles.processingSubtitle}>Claude AI is reading your receipt</Text>
+          <Text style={styles.processingTitle}>{saving ? 'Saving expense…' : 'Extracting data…'}</Text>
+          <Text style={styles.processingSubtitle}>
+            {saving ? 'Almost done' : 'Claude AI is reading your receipt'}
+          </Text>
         </View>
       </View>
     )
@@ -387,7 +464,7 @@ export default function ScanScreen({ navigation }: Props) {
         <TouchableOpacity onPress={retakePhoto} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.retakeLink}>‹ Retake</Text>
         </TouchableOpacity>
-        <Text style={styles.reviewTitle}>Review Receipt</Text>
+        <Text style={styles.reviewTitle}>{type === 'income' ? 'Review Income' : 'Review Receipt'}</Text>
         <View style={{ width: 52 }} />
       </View>
 
@@ -411,16 +488,21 @@ export default function ScanScreen({ navigation }: Props) {
 
         {/* Form card */}
         <View style={styles.formCard}>
+          {/* Type toggle */}
+          <View style={styles.field}>
+            <TypeToggle value={type} onChange={handleTypeChange} />
+          </View>
+
           {/* Vendor */}
           <View style={styles.field}>
-            <Text style={styles.fieldLabel}>VENDOR</Text>
+            <Text style={styles.fieldLabel}>{type === 'income' ? 'SOURCE' : 'VENDOR'}</Text>
             <View style={[styles.inputRow, vendorFocused && styles.inputRowFocused]}>
               <Ionicons name="storefront-outline" size={16} color={vendorFocused ? Colors.purpleLight : Colors.gray} style={{ marginRight: 10 }} />
               <TextInput
                 style={styles.fieldInput}
                 value={vendor}
                 onChangeText={setVendor}
-                placeholder="e.g. Starbucks"
+                placeholder={type === 'income' ? 'e.g. Client payment, Salary' : 'e.g. Starbucks'}
                 placeholderTextColor={Colors.gray}
                 onFocus={() => setVendorFocused(true)}
                 onBlur={() => setVendorFocused(false)}
@@ -457,7 +539,7 @@ export default function ScanScreen({ navigation }: Props) {
             <Text style={styles.fieldLabel}>CATEGORY</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 2 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                {EXPENSE_CATEGORIES.map(cat => (
+                {(type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(cat => (
                   <TouchableOpacity
                     key={cat.id}
                     onPress={() => setCategory(cat.id)}
@@ -500,7 +582,7 @@ export default function ScanScreen({ navigation }: Props) {
             {saving ? (
               <Spinner size={20} color={Colors.white} />
             ) : (
-              <Text style={styles.saveBtnText}>Save Expense</Text>
+              <Text style={styles.saveBtnText}>{type === 'income' ? 'Save Income' : 'Save Expense'}</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>

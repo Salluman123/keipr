@@ -1,5 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js'
-import type { CategoryId } from '../constants/categories'
+import type { AnyCategoryId } from '../constants/categories'
 
 export type AccountType = 'personal' | 'freelancer' | 'business'
 
@@ -13,13 +13,16 @@ export interface Profile {
   updated_at: string
 }
 
+export type TransactionType = 'expense' | 'income'
+
 export interface Expense {
   id: string
   user_id: string
   vendor: string
   amount: number
   currency: string
-  category: CategoryId
+  category: AnyCategoryId
+  type: TransactionType
   date: string
   receipt_image_url?: string
   notes?: string

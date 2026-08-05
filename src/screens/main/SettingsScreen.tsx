@@ -1,7 +1,7 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, Switch,
-  StyleSheet, Alert, Modal, TextInput, KeyboardAvoidingView, Platform,
+  StyleSheet, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
@@ -14,6 +14,8 @@ import { Strings } from '../../constants/strings'
 import { useAuthStore } from '../../store/authStore'
 import { useExpenseStore } from '../../store/expenseStore'
 import { usePurchaseStore } from '../../store/purchaseStore'
+import { useLockStore } from '../../store/lockStore'
+import { useNotificationStore } from '../../store/notificationStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
 import { removeAllReceipts } from '../../lib/receiptStorage'
@@ -67,6 +69,8 @@ export default function SettingsScreen() {
   const { user, signOut } = useAuthStore()
   const { fetchExpenses, selectedMonth, selectedYear, currency, setCurrency } = useExpenseStore()
   const { isPro } = usePurchaseStore()
+  const { biometricEnabled, setBiometricEnabled, checkBiometricAvailability } = useLockStore()
+  const { notificationsEnabled, setNotificationsEnabled } = useNotificationStore()
   const userId = user?.id ?? ''
 
   const name: string = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? 'User'
@@ -75,12 +79,43 @@ export default function SettingsScreen() {
   const accountLabel = accountTypeRaw === 'freelancer' ? 'Freelancer'
     : accountTypeRaw === 'business' ? 'Business' : 'Personal'
 
-  const toggleNotifications = () => {
-    Alert.alert('Coming Soon', 'Push notifications will be available in a future update.')
+  useEffect(() => {
+    checkBiometricAvailability()
+  }, [])
+
+  const toggleNotifications = async (value: boolean) => {
+    const result = await setNotificationsEnabled(value)
+    if (!result.success) {
+      if (result.deniedPermanently) {
+        Alert.alert(
+          'Notifications Disabled',
+          'Notifications are turned off for Keipr in your device settings. Enable them there, then try again.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        )
+      } else {
+        Alert.alert(
+          'Permission Needed',
+          'Keipr needs notification permission to send you a daily expense reminder.'
+        )
+      }
+    }
   }
 
-  const toggleBiometric = () => {
-    Alert.alert('Coming Soon', 'Biometric lock will be available in a future update.')
+  const toggleBiometric = async (value: boolean) => {
+    if (value) {
+      const available = await checkBiometricAvailability()
+      if (!available) {
+        Alert.alert(
+          'Biometric Lock Unavailable',
+          'Set up Face ID, Touch ID, or a device passcode in your device settings, then try again.'
+        )
+        return
+      }
+    }
+    await setBiometricEnabled(value)
   }
 
   // Edit profile
@@ -222,16 +257,6 @@ export default function SettingsScreen() {
     ])
   }
 
-  const toggle = (value: boolean, color = Colors.purpleLight) => (
-    <Switch
-      value={value}
-      onValueChange={() => {}}
-      trackColor={{ false: Colors.border, true: color }}
-      thumbColor="#fff"
-      ios_backgroundColor={Colors.border}
-    />
-  )
-
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       {/* Edit Profile Modal */}
@@ -352,10 +377,9 @@ export default function SettingsScreen() {
         <SettingsCard>
           <Row
             icon="🔔" label="Notifications"
-            onPress={toggleNotifications}
             right={
               <Switch
-                value={false}
+                value={notificationsEnabled}
                 onValueChange={toggleNotifications}
                 trackColor={{ false: Colors.border, true: Colors.purpleLight }}
                 thumbColor="#fff"
@@ -366,21 +390,15 @@ export default function SettingsScreen() {
           <Sep />
           <Row
             icon="🔒" label="Biometric Lock"
-            onPress={toggleBiometric}
             right={
               <Switch
-                value={false}
+                value={biometricEnabled}
                 onValueChange={toggleBiometric}
                 trackColor={{ false: Colors.border, true: Colors.purpleLight }}
                 thumbColor="#fff"
                 ios_backgroundColor={Colors.border}
               />
             }
-          />
-          <Sep />
-          <Row
-            icon="🌙" label="Dark Mode"
-            right={toggle(true)}
           />
           <Sep />
           <Row
@@ -402,11 +420,6 @@ export default function SettingsScreen() {
             icon="📤" label={exportingAll ? 'Exporting…' : 'Export All Data'}
             onPress={exportingAll ? undefined : exportAllData}
             disabled={exportingAll}
-          />
-          <Sep />
-          <Row
-            icon="☁️" label="iCloud Backup"
-            onPress={() => Alert.alert('Coming Soon', 'iCloud backup will be available in a future update.')}
           />
           <Sep />
           <Row

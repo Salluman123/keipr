@@ -11,19 +11,30 @@ const JSON_HEADERS = { ...CORS_HEADERS, 'Content-Type': 'application/json' }
 const MAX_BASE64_LENGTH = 7_000_000
 const VALID_MEDIA_TYPES = new Set(['image/jpeg', 'image/png'])
 const VALID_CURRENCIES = new Set(['USD', 'GBP', 'EUR', 'AED', 'INR', 'CAD', 'AUD', 'JPY'])
-const VALID_CATEGORIES = new Set([
+const VALID_TYPES = new Set(['expense', 'income', 'unrecognized'])
+const EXPENSE_CATEGORIES = new Set([
   'food_dining', 'transport', 'accommodation', 'equipment', 'software',
   'marketing', 'utilities', 'healthcare', 'entertainment', 'office', 'travel', 'other',
 ])
+const INCOME_CATEGORIES = new Set([
+  'salary', 'client_payment', 'refund', 'investment', 'other_income',
+])
 
-const SYSTEM_PROMPT = `You are a receipt scanner. Extract data from receipt images and return ONLY valid JSON with exactly these fields:
+const SYSTEM_PROMPT = `You are a financial document scanner for a bookkeeping app. Look at the image and return ONLY valid JSON with exactly these fields:
 {
-  "vendor": string or null,
-  "amount": number (total amount paid, as a plain number like 12.99) or null,
+  "type": one of exactly "expense", "income", or "unrecognized" —
+    "expense" for a purchase receipt or bill,
+    "income" for a deposit slip, cheque, invoice paid to the user, or payment confirmation,
+    "unrecognized" if the image is not a financial document or its type cannot be determined,
+  "vendor": string or null — the merchant/business name for an expense, or the payer/source
+    name (e.g. client, employer, bank) for income,
+  "amount": number (total amount, as a plain number like 12.99) or null,
   "date": string in YYYY-MM-DD format or null,
-  "category": one of exactly these string values or null:
-    "food_dining", "transport", "accommodation", "equipment", "software",
-    "marketing", "utilities", "healthcare", "entertainment", "office", "travel", "other",
+  "category": one of exactly these string values or null — pick from the expense list only
+    when type is "expense", and from the income list only when type is "income":
+    expense: "food_dining", "transport", "accommodation", "equipment", "software",
+      "marketing", "utilities", "healthcare", "entertainment", "office", "travel", "other"
+    income: "salary", "client_payment", "refund", "investment", "other_income"
   "currency": one of exactly these ISO 4217 codes or null:
     "USD", "GBP", "EUR", "AED", "INR", "CAD", "AUD", "JPY"
 }
@@ -129,7 +140,7 @@ Deno.serve(async (req) => {
           role: 'user',
           content: [
             { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-            { type: 'text', text: 'Extract the receipt data.' },
+            { type: 'text', text: 'Classify and extract the document data.' },
           ],
         }],
       }),
@@ -157,28 +168,46 @@ Deno.serve(async (req) => {
     return json(502, { error: 'Receipt response could not be parsed' })
   }
 
+  const type =
+    typeof parsed.type === 'string' && VALID_TYPES.has(parsed.type)
+      ? parsed.type as 'expense' | 'income' | 'unrecognized'
+      : 'unrecognized'
   const currency =
     typeof parsed.currency === 'string' && VALID_CURRENCIES.has(parsed.currency.toUpperCase())
       ? parsed.currency.toUpperCase()
       : null
+  const validCategoriesForType = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
   const category =
-    typeof parsed.category === 'string' && VALID_CATEGORIES.has(parsed.category)
+    typeof parsed.category === 'string' && validCategoriesForType.has(parsed.category)
       ? parsed.category
       : null
   const date =
     typeof parsed.date === 'string' && isValidDate(parsed.date) ? parsed.date : null
+  const vendor =
+    typeof parsed.vendor === 'string' && parsed.vendor.trim()
+      ? parsed.vendor.trim().slice(0, 200)
+      : null
+  const amount =
+    typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) && parsed.amount > 0
+      ? parsed.amount
+      : null
+
+  // Derived from missing fields rather than a self-reported confidence score:
+  // the model returning null here is already a validated, deterministic signal
+  // that it couldn't read the field — an LLM self-rating its own confidence is
+  // known to be poorly calibrated and wouldn't be any more trustworthy for the
+  // same fields. Vendor and amount are the two fields the client already
+  // requires before an entry can be saved, so they're the critical ones —
+  // alongside a confidently classified type.
+  const needsConfirm = type === 'unrecognized' || vendor === null || amount === null
 
   return json(200, {
-    vendor:
-      typeof parsed.vendor === 'string' && parsed.vendor.trim()
-        ? parsed.vendor.trim().slice(0, 200)
-        : null,
-    amount:
-      typeof parsed.amount === 'number' && Number.isFinite(parsed.amount) && parsed.amount > 0
-        ? parsed.amount
-        : null,
+    type,
+    vendor,
+    amount,
     date,
     category,
     currency,
+    needsConfirm,
   })
 })

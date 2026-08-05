@@ -1,6 +1,6 @@
 {
   "name": "keipr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -23,7 +23,10 @@
     "expo-file-system": "~19.0.22",
     "expo-image-picker": "~17.0.11",
     "expo-linear-gradient": "~15.0.8",
+    "expo-local-authentication": "~17.0.8",
     "expo-media-library": "~18.2.1",
+    "expo-notifications": "~0.32.2",
+    "expo-quick-actions": "^5.0.0",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
@@ -40,6 +43,7 @@
   "private": true,
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "supabase": "^2.111.0",
     "typescript": "~5.9.2"
   }
 }

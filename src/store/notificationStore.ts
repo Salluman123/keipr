@@ -1,14 +1,33 @@
 import { create } from 'zustand'
 import { Platform } from 'react-native'
 import * as SecureStore from 'expo-secure-store'
-import * as Notifications from 'expo-notifications'
 
 const NOTIFICATIONS_KEY = 'keipr_notifications_enabled'
 const REMINDER_HOUR = 20 // 8 PM
 const REMINDER_MINUTE = 0
 const CHANNEL_ID = 'daily-reminder'
 
-async function ensureAndroidChannel() {
+type NotificationsModule = typeof import('expo-notifications')
+
+let cachedNotifications: NotificationsModule | null = null
+
+// expo-notifications resolves its native module eagerly (and throws) as a side
+// effect of import, not on first call — a static top-level import can crash the
+// app before any try/catch around a later call site would run. Deferring the
+// require to here keeps that resolution attempt inside a guard, and lets a
+// later call retry if the native module wasn't registered yet at startup. Only
+// the success is cached — a failure isn't, so the next call gets another chance.
+function getNotifications(): NotificationsModule | null {
+  if (cachedNotifications) return cachedNotifications
+  try {
+    cachedNotifications = require('expo-notifications') as NotificationsModule
+    return cachedNotifications
+  } catch {
+    return null
+  }
+}
+
+async function ensureAndroidChannel(Notifications: NotificationsModule) {
   if (Platform.OS !== 'android') return
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: 'Daily Reminders',
@@ -17,7 +36,9 @@ async function ensureAndroidChannel() {
 }
 
 async function scheduleDailyReminder() {
-  await ensureAndroidChannel()
+  const Notifications = getNotifications()
+  if (!Notifications) return
+  await ensureAndroidChannel(Notifications)
   await Notifications.cancelAllScheduledNotificationsAsync()
   await Notifications.scheduleNotificationAsync({
     content: {
@@ -60,6 +81,9 @@ export const useNotificationStore = create<NotificationStore>((set) => {
     notificationsEnabled: false,
 
     setNotificationsEnabled: async (enabled) => {
+      const Notifications = getNotifications()
+      if (!Notifications) return { success: false }
+
       if (!enabled) {
         set({ notificationsEnabled: false })
         SecureStore.setItemAsync(NOTIFICATIONS_KEY, 'false').catch(() => {})

@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
-import * as LocalAuthentication from 'expo-local-authentication'
 import type { AppStateStatus } from 'react-native'
 
 const BIOMETRIC_LOCK_KEY = 'keipr_biometric_lock'
@@ -8,6 +7,27 @@ const BIOMETRIC_LOCK_KEY = 'keipr_biometric_lock'
 // (a notification, switching to another app to copy a value) shouldn't force
 // a re-auth every time.
 const IDLE_LOCK_MS = 30_000
+
+type LocalAuthenticationModule = typeof import('expo-local-authentication')
+
+let cachedLocalAuth: LocalAuthenticationModule | null = null
+
+// expo-local-authentication resolves its native module eagerly (and throws) as
+// a side effect of import, not on first call — a static top-level import can
+// crash the app before any try/catch around a later call site would run.
+// Deferring the require to here keeps that resolution attempt inside a guard,
+// and lets a later call retry if the native module wasn't registered yet at
+// startup. Only the success is cached — a failure isn't, so the next call
+// gets another chance.
+function getLocalAuthentication(): LocalAuthenticationModule | null {
+  if (cachedLocalAuth) return cachedLocalAuth
+  try {
+    cachedLocalAuth = require('expo-local-authentication') as LocalAuthenticationModule
+    return cachedLocalAuth
+  } catch {
+    return null
+  }
+}
 
 interface LockStore {
   hydrated: boolean
@@ -38,6 +58,11 @@ export const useLockStore = create<LockStore>((set, get) => {
     backgroundedAt: null,
 
     checkBiometricAvailability: async () => {
+      const LocalAuthentication = getLocalAuthentication()
+      if (!LocalAuthentication) {
+        set({ biometricAvailable: false })
+        return false
+      }
       try {
         // getEnrolledLevelAsync covers both Face/Touch ID and device-passcode-only
         // setups, since authenticateAsync can fall back to the passcode either way.
@@ -57,6 +82,8 @@ export const useLockStore = create<LockStore>((set, get) => {
     },
 
     authenticate: async () => {
+      const LocalAuthentication = getLocalAuthentication()
+      if (!LocalAuthentication) return false
       try {
         const result = await LocalAuthentication.authenticateAsync({
           promptMessage: 'Unlock Keipr',

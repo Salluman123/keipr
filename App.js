@@ -3,7 +3,6 @@ import { AppState } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import Purchases from 'react-native-purchases'
-import * as Notifications from 'expo-notifications'
 import * as QuickActions from 'expo-quick-actions'
 import AppNavigator from './src/navigation/AppNavigator'
 import { useAuthStore } from './src/store/authStore'
@@ -13,7 +12,12 @@ import { useLockStore } from './src/store/lockStore'
 import { getCurrencyRate, refreshExchangeRates } from './src/lib/currency'
 import { hasProEntitlement } from './src/lib/entitlements'
 
+// expo-notifications resolves its native module eagerly (and throws) as a side
+// effect of import, not on first call — a static top-level import can crash the
+// app before this try/catch would ever run. Deferring the require to here keeps
+// that resolution attempt inside the guard instead of ahead of it.
 try {
+  const Notifications = require('expo-notifications')
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,

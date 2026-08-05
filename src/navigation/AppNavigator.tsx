@@ -28,10 +28,12 @@ export default function AppNavigator() {
   const tryConsumeInitialAction = () => {
     if (consumedInitialAction.current) return
     if (!session || !navigationRef.isReady()) return
-    if (QuickActions.initial?.id === SCAN_ACTION_ID) {
-      consumedInitialAction.current = true
-      navigationRef.navigate('ScanReceipt')
-    }
+    try {
+      if (QuickActions.initial?.id === SCAN_ACTION_ID) {
+        consumedInitialAction.current = true
+        navigationRef.navigate('ScanReceipt')
+      }
+    } catch {}
   }
 
   useEffect(() => {
@@ -41,12 +43,16 @@ export default function AppNavigator() {
   // Warm-launch case: app was already running (foreground or background)
   // when the quick action was tapped.
   useEffect(() => {
-    const sub = QuickActions.addListener((action) => {
-      if (action.id === SCAN_ACTION_ID && session && navigationRef.isReady()) {
-        navigationRef.navigate('ScanReceipt')
-      }
-    })
-    return () => sub.remove()
+    try {
+      const sub = QuickActions.addListener((action) => {
+        if (action.id === SCAN_ACTION_ID && session && navigationRef.isReady()) {
+          navigationRef.navigate('ScanReceipt')
+        }
+      })
+      return () => sub.remove()
+    } catch {
+      return undefined
+    }
   }, [session])
 
   if (loading) {

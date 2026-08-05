@@ -13,14 +13,16 @@ import { useLockStore } from './src/store/lockStore'
 import { getCurrencyRate, refreshExchangeRates } from './src/lib/currency'
 import { hasProEntitlement } from './src/lib/entitlements'
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-})
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  })
+} catch {}
 
 export default function App() {
   const initialize = useAuthStore((state) => state.initialize)

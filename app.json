@@ -76,7 +76,8 @@
         }
       ],
       "expo-notifications",
-      "expo-quick-actions"
+      "expo-quick-actions",
+      "expo-font"
     ],
     "extra": {
       "eas": {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { View, StyleSheet, AppState } from 'react-native'
 import { NavigationContainer } from '@react-navigation/native'
 import * as QuickActions from 'expo-quick-actions'
 import { useAuthStore } from '../store/authStore'
@@ -39,6 +39,17 @@ export default function AppNavigator() {
   useEffect(() => {
     tryConsumeInitialAction()
   }, [session])
+
+  // Feeds background/foreground transitions into lockStore so its idle-timeout
+  // re-lock (handleAppStateChange) actually fires — without this subscription
+  // the store's logic is defined but never invoked, and biometric lock only
+  // ever engages on cold start.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      useLockStore.getState().handleAppStateChange(nextState)
+    })
+    return () => sub.remove()
+  }, [])
 
   // Warm-launch case: app was already running (foreground or background)
   // when the quick action was tapped.

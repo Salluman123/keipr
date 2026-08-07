@@ -449,7 +449,7 @@ export default function ScanScreen({ navigation }: Props) {
           <SpinningRing />
           <Text style={styles.processingTitle}>{saving ? 'Saving expense…' : 'Extracting data…'}</Text>
           <Text style={styles.processingSubtitle}>
-            {saving ? 'Almost done' : 'Claude AI is reading your receipt'}
+            {saving ? 'Almost done' : 'Reading your receipt…'}
           </Text>
         </View>
       </View>

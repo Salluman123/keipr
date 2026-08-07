@@ -1,7 +1,7 @@
 export const Strings = {
   appName: 'Keipr',
   tagline: 'Smart receipts, sharper books.',
-  version: 'v1.0.1',
+  version: 'v1.0.2',
   errors: {
     generic: 'Something went wrong. Please try again.',
     network: 'No connection — showing cached data.',

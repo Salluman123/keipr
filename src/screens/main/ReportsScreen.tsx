@@ -69,16 +69,32 @@ function BarChart({
       </Defs>
       {data.map((d, i) => {
         const isActive = d.month === currentMonth && d.year === currentYear
-        const barH = d.total > 0 ? Math.max((d.total / maxTotal) * (BAR_AREA_H - 8), 6) : 4
+        const isEmpty = d.total <= 0
+        // Empty months get a small fixed-height placeholder rather than being
+        // scaled against maxTotal — at 0 they'd otherwise round to a sliver
+        // that reads as "broken" rather than "no spending".
+        const PLACEHOLDER_H = 14
+        const barH = isEmpty ? PLACEHOLDER_H : Math.max((d.total / maxTotal) * (BAR_AREA_H - 8), 6)
         const x = GAP + i * (BAR_W + GAP)
         const y = BAR_AREA_H - barH
         return (
           <G key={i}>
-            <Rect
-              x={x} y={y} width={BAR_W} height={barH} rx={5}
-              fill={isActive ? 'url(#barGrad)' : Colors.purpleLight + '30'}
-              clipPath="url(#barClip)"
-            />
+            {isEmpty ? (
+              <Rect
+                x={x} y={y} width={BAR_W} height={barH} rx={5}
+                fill="none"
+                stroke={Colors.border}
+                strokeWidth={1.5}
+                strokeDasharray="4,3"
+                clipPath="url(#barClip)"
+              />
+            ) : (
+              <Rect
+                x={x} y={y} width={BAR_W} height={barH} rx={5}
+                fill={isActive ? 'url(#barGrad)' : Colors.purpleLight + '30'}
+                clipPath="url(#barClip)"
+              />
+            )}
             <SvgText
               x={x + BAR_W / 2} y={BAR_H - 5}
               textAnchor="middle"

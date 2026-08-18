@@ -13,7 +13,7 @@ const VALID_MEDIA_TYPES = new Set(['image/jpeg', 'image/png'])
 const VALID_CURRENCIES = new Set(['USD', 'GBP', 'EUR', 'AED', 'INR', 'CAD', 'AUD', 'JPY'])
 const VALID_TYPES = new Set(['expense', 'income', 'unrecognized'])
 const EXPENSE_CATEGORIES = new Set([
-  'food_dining', 'transport', 'accommodation', 'equipment', 'software',
+  'groceries', 'food_dining', 'transport', 'accommodation', 'equipment', 'software',
   'marketing', 'utilities', 'healthcare', 'entertainment', 'office', 'travel', 'other',
 ])
 const INCOME_CATEGORIES = new Set([
@@ -32,9 +32,23 @@ const SYSTEM_PROMPT = `You are a financial document scanner for a bookkeeping ap
   "date": string in YYYY-MM-DD format or null,
   "category": one of exactly these string values or null — pick from the expense list only
     when type is "expense", and from the income list only when type is "income":
-    expense: "food_dining", "transport", "accommodation", "equipment", "software",
+    expense: "groceries", "food_dining", "transport", "accommodation", "equipment", "software",
       "marketing", "utilities", "healthcare", "entertainment", "office", "travel", "other"
     income: "salary", "client_payment", "refund", "investment", "other_income"
+
+  Category guidance for expenses (read the merchant name and line items carefully —
+  do not default to "other" just because you're unsure; make your best specific guess):
+  - "groceries" is for supermarkets, hypermarkets, grocery/convenience stores, and
+    markets selling food or household items to take home and prepare — merchant names
+    containing words like "Supermarket", "Hypermarket", "Mart", "Grocery", "Market",
+    "Foods" typically belong here, NOT "food_dining".
+  - "food_dining" is for restaurants, cafes, bars, diners, bakeries, and takeout/delivery
+    of prepared food eaten on the spot or brought home ready to eat — merchant names
+    containing words like "Restaurant", "Cafe", "Coffee", "Grill", "Bistro", "Kitchen",
+    "Bar", "Diner", "Pizzeria" typically belong here.
+  - Use "other" only when the merchant and line items genuinely don't fit any of the
+    more specific categories above (groceries, food_dining, transport, accommodation,
+    equipment, software, marketing, utilities, healthcare, entertainment, office, travel).
   "currency": one of exactly these ISO 4217 codes or null:
     "USD", "GBP", "EUR", "AED", "INR", "CAD", "AUD", "JPY"
 }

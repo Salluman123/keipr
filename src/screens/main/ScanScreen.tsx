@@ -345,11 +345,8 @@ export default function ScanScreen({ navigation }: Props) {
         <Text style={styles.permSub}>Allow camera access to scan receipts</Text>
         <TouchableOpacity onPress={requestPermission} style={styles.permBtn}>
           <LinearGradient colors={[Colors.purpleLight, Colors.purpleDark]} style={styles.permBtnGrad}>
-            <Text style={styles.permBtnText}>Grant Permission</Text>
+            <Text style={styles.permBtnText}>Continue</Text>
           </LinearGradient>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginTop: 12 }}>
-          <Text style={{ color: Colors.gray, fontSize: 14 }}>Cancel</Text>
         </TouchableOpacity>
       </View>
     )
@@ -502,7 +499,7 @@ export default function ScanScreen({ navigation }: Props) {
                 style={styles.fieldInput}
                 value={vendor}
                 onChangeText={setVendor}
-                placeholder={type === 'income' ? 'e.g. Client payment, Salary' : 'e.g. Starbucks'}
+                placeholder={type === 'income' ? 'e.g. Acme Corp, Company name' : 'e.g. Starbucks'}
                 placeholderTextColor={Colors.gray}
                 onFocus={() => setVendorFocused(true)}
                 onBlur={() => setVendorFocused(false)}

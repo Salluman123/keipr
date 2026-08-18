@@ -178,6 +178,7 @@ export default function HomeScreen() {
     totalIncome,
     totalExpenses,
     monthChangePercent,
+    monthChangeAbsolute,
     currency,
     currencyRate,
     fetchExpenses,
@@ -220,10 +221,23 @@ export default function HomeScreen() {
     setRefreshing(false)
   }, [userId, selectedMonth, selectedYear])
 
-  const changeLabel =
-    monthChangePercent == null
-      ? null
-      : `${monthChangePercent >= 0 ? '↑' : '↓'} ${Math.abs(monthChangePercent).toFixed(1)}%`
+  // The store only ever populates one of these: a percentage when the previous
+  // period had a meaningful spend to compare against, or a plain dollar delta
+  // when the previous period was ~$0 (where a percentage would be meaningless
+  // or absurdly large). Neither set means there's nothing to compare — hide
+  // the badge entirely instead of showing a misleading number.
+  const changeLabel = (() => {
+    if (monthChangePercent != null) {
+      const arrow = monthChangePercent >= 0 ? '↑' : '↓'
+      return `${arrow} ${Math.abs(monthChangePercent).toFixed(1)}%`
+    }
+    if (monthChangeAbsolute != null) {
+      const arrow = monthChangeAbsolute >= 0 ? '↑' : '↓'
+      const abs = Math.abs(monthChangeAbsolute * currencyRate)
+      return `New · ${arrow} ${sym}${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }
+    return null
+  })()
 
   return (
     <View style={[styles.root, { backgroundColor: Colors.background }]}>

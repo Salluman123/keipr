@@ -1,4 +1,5 @@
 export const EXPENSE_CATEGORIES = [
+  { id: 'groceries',      label: 'Groceries',        icon: '🛒', color: '#84CC16' },
   { id: 'food_dining',    label: 'Food & Dining',    icon: '🍽️', color: '#F59E0B' },
   { id: 'transport',      label: 'Transport',         icon: '🚗', color: '#3B82F6' },
   { id: 'accommodation',  label: 'Accommodation',     icon: '🏨', color: '#8B5CF6' },

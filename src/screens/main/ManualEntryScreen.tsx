@@ -216,7 +216,7 @@ export default function ManualEntryScreen({ navigation }: Props) {
                 style={styles.input}
                 value={vendor}
                 onChangeText={setVendor}
-                placeholder={type === 'income' ? 'e.g. Client payment, Salary' : 'e.g. Amazon, Starbucks'}
+                placeholder={type === 'income' ? 'e.g. Acme Corp, Company name' : 'e.g. Amazon, Starbucks'}
                 placeholderTextColor={Colors.gray}
                 returnKeyType="next"
                 onSubmitEditing={() => amountRef.current?.focus()}

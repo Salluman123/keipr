@@ -31,6 +31,7 @@ interface ExpenseStore {
   totalIncome: number
   totalExpenses: number
   monthChangePercent: number | null
+  monthChangeAbsolute: number | null
   lastFetchParams: FetchParams | null
   currency: string
   currencyRate: number
@@ -83,6 +84,7 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
   totalIncome: 0,
   totalExpenses: 0,
   monthChangePercent: null,
+  monthChangeAbsolute: null,
   lastFetchParams: null,
   currency: 'USD',
   currencyRate: 1,
@@ -131,14 +133,29 @@ export const useExpenseStore = create<ExpenseStore>((set, get) => {
         )
 
       const currTotal = computeStats(expenses).totalExpenses
-      const monthChangePercent =
-        prevTotal > 0 ? ((currTotal - prevTotal) / prevTotal) * 100 : null
+
+      // A previous period total near $0 makes a percentage change meaningless —
+      // (current - previous) / previous can blow up to absurd four/five-digit
+      // percentages (e.g. "+10114.8%") for even a small current spend. Below
+      // this floor we report the plain dollar change instead of a percentage.
+      // Real percentages are still capped as a sanity check against any other
+      // edge case producing an outsized ratio.
+      const PREV_TOTAL_FLOOR = 1 // USD-normalized
+      const MAX_PERCENT = 999
+      let monthChangePercent: number | null = null
+      let monthChangeAbsolute: number | null = null
+      if (prevTotal >= PREV_TOTAL_FLOOR) {
+        const rawPercent = ((currTotal - prevTotal) / prevTotal) * 100
+        monthChangePercent = Math.max(-MAX_PERCENT, Math.min(MAX_PERCENT, rawPercent))
+      } else if (currTotal > 0) {
+        monthChangeAbsolute = currTotal - prevTotal
+      }
 
       // A newer fetchExpenses call has been issued since this one started —
       // discard this result so a slower, stale request can't clobber fresher
       // data that already landed.
       if (requestId !== fetchRequestId) return
-      set({ expenses, ...computeStats(expenses), monthChangePercent, loading: false, fetchError: false })
+      set({ expenses, ...computeStats(expenses), monthChangePercent, monthChangeAbsolute, loading: false, fetchError: false })
     } catch {
       if (requestId !== fetchRequestId) return
       // Keep whatever is already on screen, but flag the failure so screens can

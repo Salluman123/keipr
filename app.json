@@ -2,7 +2,7 @@
   "expo": {
     "name": "Keipr",
     "slug": "keipr",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.getkeipr.app",
-      "buildNumber": "3",
+      "buildNumber": "4",
       "supportsTablet": false,
       "privacyPolicyUrl": "https://getkeipr.com/privacy",
       "infoPlistSupportedUIOrientations": [

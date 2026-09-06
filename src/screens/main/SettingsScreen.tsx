@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, Switch,
   StyleSheet, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
+import { formatDistanceToNow } from 'date-fns'
 import { CURRENCIES } from '../../lib/currency'
 import { Colors } from '../../constants/colors'
 import { Strings } from '../../constants/strings'
@@ -19,6 +21,7 @@ import { useNotificationStore } from '../../store/notificationStore'
 import { supabase } from '../../lib/supabase'
 import { exportExpensesAsCSV } from '../../lib/csvExport'
 import { removeAllReceipts } from '../../lib/receiptStorage'
+import { extractFromImage } from '../../lib/claudeOCR'
 import Spinner from '../../components/Spinner'
 import type { MainStackParamList } from '../../navigation/MainStack'
 import type { Expense } from '../../types'
@@ -34,6 +37,31 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
 }
 
 const Sep = () => <View style={s.sep} />
+
+// Honest claim only: your data lives in your account and is synced across
+// devices. Never implies it survives being offline mid-save — there's no
+// local write queue behind this, so that would be a false guarantee.
+function SyncStatusRow({ fetchError, lastSyncedAt }: { fetchError: boolean; lastSyncedAt: number | null }) {
+  if (fetchError) {
+    return (
+      <View style={s.syncRow}>
+        <Ionicons name="cloud-offline-outline" size={18} color={Colors.error} />
+        <Text style={[s.syncTitle, { color: Colors.error }]}>Sync failed — check your connection</Text>
+      </View>
+    )
+  }
+  return (
+    <View style={s.syncRow}>
+      <Ionicons name="cloud-done-outline" size={18} color={lastSyncedAt ? Colors.success : Colors.gray} />
+      <View style={s.syncTextCol}>
+        <Text style={s.syncTitle}>{lastSyncedAt ? 'Synced to your account' : 'Not synced yet'}</Text>
+        {lastSyncedAt && (
+          <Text style={s.syncSubtext}>Last synced: {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</Text>
+        )}
+      </View>
+    </View>
+  )
+}
 
 function Row({
   icon, label, onPress, danger, right, disabled,
@@ -67,7 +95,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>()
   const { user, signOut } = useAuthStore()
-  const { fetchExpenses, selectedMonth, selectedYear, currency, setCurrency } = useExpenseStore()
+  const { fetchExpenses, selectedMonth, selectedYear, currency, setCurrency, fetchError, lastSyncedAt } = useExpenseStore()
   const { isPro } = usePurchaseStore()
   const { biometricEnabled, setBiometricEnabled, checkBiometricAvailability } = useLockStore()
   const { notificationsEnabled, setNotificationsEnabled } = useNotificationStore()
@@ -121,15 +149,85 @@ export default function SettingsScreen() {
   // Edit profile
   const [editVisible, setEditVisible] = useState(false)
   const [editName, setEditName] = useState(name)
+  const [editTrn, setEditTrn] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
+  const trnInputRef = useRef<TextInput>(null)
+
+  // TRN (Tax Registration Number) — lives on the profiles table, not the
+  // auth user_metadata full_name uses, so it needs its own fetch.
+  const [trn, setTrn] = useState<string | null>(null)
+  useEffect(() => {
+    if (!userId) return
+    const fetchTrn = async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('trn').eq('id', userId).maybeSingle()
+        setTrn(data?.trn ?? null)
+      } catch {
+        // ignore — field just shows blank until the next successful fetch
+      }
+    }
+    fetchTrn()
+  }, [userId])
 
   // Loading
   const [exportingAll, setExportingAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
 
+  // ── Hidden __DEV__-only debug feature: tap the version string 7x to reveal
+  // a "Debug: Test GLM Scan" row. Every piece of this — the state, the
+  // handlers, and the JSX below — is gated behind `__DEV__`, React Native's
+  // standard dev-vs-release flag. `__DEV__` is statically inlined to `false`
+  // in a release/App Store bundle, so `if (__DEV__)` / `{__DEV__ && ...}`
+  // branches become dead code the production bundler (Metro + Terser) strips
+  // during minification — the same mechanism every RN debug-menu feature
+  // (Flipper, Reactotron, etc.) relies on. None of this exists in a shipped
+  // build; the tap gesture itself is inert (onPress is undefined) outside dev.
+  const debugTapCount = useRef(0)
+  const debugTapResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [debugRowVisible, setDebugRowVisible] = useState(false)
+  const [debugScanning, setDebugScanning] = useState(false)
+  const [debugResult, setDebugResult] = useState<string | null>(null)
+
+  const handleVersionTap = () => {
+    if (!__DEV__) return // belt-and-braces — onPress itself is already gated below
+    if (debugTapResetTimer.current) clearTimeout(debugTapResetTimer.current)
+    debugTapCount.current += 1
+    if (debugTapCount.current >= 7) {
+      debugTapCount.current = 0
+      setDebugRowVisible(true)
+      return
+    }
+    // Reset the count if taps stop coming for a couple seconds, so it takes
+    // 7 taps in quick succession, not 7 taps ever.
+    debugTapResetTimer.current = setTimeout(() => { debugTapCount.current = 0 }, 2000)
+  }
+
+  const handleDebugGlmScan = async () => {
+    if (!__DEV__) return
+    let picked: ImagePicker.ImagePickerResult
+    try {
+      picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 })
+    } catch {
+      Alert.alert('Error', 'Could not open your photo library.')
+      return
+    }
+    if (picked.canceled || !picked.assets[0]) return
+
+    setDebugScanning(true)
+    try {
+      const data = await extractFromImage(picked.assets[0].uri, { provider: 'glm' })
+      setDebugResult(JSON.stringify(data, null, 2))
+    } catch (e: any) {
+      setDebugResult(`ERROR\n\n${e?.message ?? 'Unknown error'}`)
+    } finally {
+      setDebugScanning(false)
+    }
+  }
+
   const openEditProfile = () => {
     setEditName(name)
+    setEditTrn(trn ?? '')
     setEditVisible(true)
   }
 
@@ -137,10 +235,17 @@ export default function SettingsScreen() {
     if (!editName.trim()) return
     setSavingProfile(true)
     try {
+      const nextTrn = editTrn.trim() || null
       const { error } = await supabase.auth.updateUser({
         data: { full_name: editName.trim() },
       })
       if (error) throw error
+      const { error: trnError } = await supabase
+        .from('profiles')
+        .update({ trn: nextTrn })
+        .eq('id', userId)
+      if (trnError) throw trnError
+      setTrn(nextTrn)
       setEditVisible(false)
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? Strings.errors.updateProfile)
@@ -272,7 +377,7 @@ export default function SettingsScreen() {
           >
             <TouchableOpacity activeOpacity={1} onPress={() => {}}>
               <View style={s.modalCard}>
-                <Text style={s.modalTitle}>Edit Name</Text>
+                <Text style={s.modalTitle}>Edit Profile</Text>
                 <TextInput
                   style={s.modalInput}
                   value={editName}
@@ -280,9 +385,23 @@ export default function SettingsScreen() {
                   placeholder="Full name"
                   placeholderTextColor={Colors.gray}
                   autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={saveProfile}
+                  returnKeyType="next"
+                  onSubmitEditing={() => trnInputRef.current?.focus()}
                 />
+                <View style={s.modalFieldGroup}>
+                  <Text style={s.modalFieldLabel}>Tax Registration Number (TRN)</Text>
+                  <TextInput
+                    ref={trnInputRef}
+                    style={s.modalInput}
+                    value={editTrn}
+                    onChangeText={setEditTrn}
+                    placeholder="e.g. 100123456700003"
+                    placeholderTextColor={Colors.gray}
+                    autoCapitalize="none"
+                    returnKeyType="done"
+                    onSubmitEditing={saveProfile}
+                  />
+                </View>
                 <View style={s.modalBtns}>
                   <TouchableOpacity
                     onPress={() => setEditVisible(false)}
@@ -416,6 +535,8 @@ export default function SettingsScreen() {
         {/* Data */}
         <SectionHeader title="DATA" />
         <SettingsCard>
+          <SyncStatusRow fetchError={fetchError} lastSyncedAt={lastSyncedAt} />
+          <Sep />
           <Row
             icon="📤" label={exportingAll ? 'Exporting…' : 'Export All Data'}
             onPress={exportingAll ? undefined : exportAllData}
@@ -447,8 +568,44 @@ export default function SettingsScreen() {
           />
         </SettingsCard>
 
-        <Text style={s.version}>{Strings.appName} {Strings.version}</Text>
+        {/* Hidden debug row — only ever rendered in a __DEV__ build, and only
+            after 7 taps on the version string below. Absent entirely from
+            release/App Store builds regardless of tap count. */}
+        {__DEV__ && debugRowVisible && (
+          <>
+            <SectionHeader title="DEBUG" />
+            <SettingsCard>
+              <Row
+                icon="🧪"
+                label={debugScanning ? 'Scanning…' : 'Debug: Test GLM Scan'}
+                onPress={debugScanning ? undefined : handleDebugGlmScan}
+                disabled={debugScanning}
+              />
+            </SettingsCard>
+          </>
+        )}
+
+        <TouchableOpacity onPress={__DEV__ ? handleVersionTap : undefined} activeOpacity={__DEV__ ? 0.5 : 1}>
+          <Text style={s.version}>{Strings.appName} {Strings.version}</Text>
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* Debug result viewer — __DEV__ only, see above */}
+      {__DEV__ && (
+        <Modal visible={debugResult !== null} transparent animationType="fade" statusBarTranslucent>
+          <View style={s.backdrop}>
+            <View style={[s.modalCard, { maxHeight: '75%' }]}>
+              <Text style={s.modalTitle}>GLM Debug Result</Text>
+              <ScrollView style={s.debugScroll}>
+                <Text style={s.debugText}>{debugResult}</Text>
+              </ScrollView>
+              <TouchableOpacity onPress={() => setDebugResult(null)} style={s.modalCancelBtn}>
+                <Text style={s.modalCancelText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   )
 }
@@ -507,6 +664,14 @@ const s = StyleSheet.create({
   rowRight: { alignItems: 'center', justifyContent: 'center' },
   sep: { height: 1, backgroundColor: Colors.border, marginLeft: 54 },
 
+  syncRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+  },
+  syncTextCol: { gap: 2 },
+  syncTitle: { fontSize: 14, color: Colors.offWhite, fontWeight: '600' },
+  syncSubtext: { fontSize: 12, color: Colors.gray },
+
   upgradeBanner: {
     borderRadius: 18, padding: 18, marginBottom: 8,
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -541,6 +706,8 @@ const s = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 14 : 10,
     fontSize: 16, color: Colors.offWhite,
   },
+  modalFieldGroup: { gap: 6 },
+  modalFieldLabel: { fontSize: 11, fontWeight: '700', color: Colors.grayLight, letterSpacing: 0.5 },
   modalBtns: { flexDirection: 'row', gap: 10 },
   modalCancelBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
@@ -549,4 +716,11 @@ const s = StyleSheet.create({
   modalCancelText: { fontSize: 15, color: Colors.gray, fontWeight: '600' },
   modalSaveBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   modalSaveText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  // Debug GLM result viewer (__DEV__ only)
+  debugScroll: { maxHeight: 400 },
+  debugText: {
+    fontSize: 12, color: Colors.offWhite,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
 })
